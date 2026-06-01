@@ -25,7 +25,7 @@ TUI keys:
   /exit          Quit
 
 Commands:
-  /help, /tools, /skills, /memory [query], /context [query], /todo, /agents, /trace, /policy, /image <path|url> [text], /evolve [feedback], /run <tool> <json>
+  /help, /tools, /skills, /memory [query], /context [query], /todo, /agents, /trace, /policy, /mcp, /image <path|url> [text], /evolve [feedback], /run <tool> <json>
 """.strip()
 
 
@@ -194,7 +194,7 @@ class EvolvaTUI:
         return None
 
     def _complete_command(self) -> None:
-        commands = ["/help", "/tools", "/skills", "/memory", "/context", "/todo", "/agents", "/trace", "/policy", "/image", "/evolve", "/run", "/exit"]
+        commands = ["/help", "/tools", "/skills", "/memory", "/context", "/todo", "/agents", "/trace", "/policy", "/mcp", "/image", "/evolve", "/run", "/exit"]
         matches = [c for c in commands if c.startswith(self.input_text)]
         if len(matches) == 1:
             self.input_text = matches[0] + (" " if matches[0] not in {"/help", "/tools", "/skills", "/exit"} else "")
@@ -269,6 +269,15 @@ class EvolvaTUI:
                     self._add_system("Usage: /trace list | /trace show <run_id>")
             elif line == "/policy":
                 self._add_system(self.agent.policy.as_tool_result().output)
+            elif line.startswith("/mcp"):
+                rest = line.removeprefix("/mcp").strip()
+                if not rest:
+                    self._add_system(self.agent._call_tool("mcp_servers", {}).output)
+                elif rest.startswith("tools"):
+                    server = rest.removeprefix("tools").strip()
+                    self._add_system(self.agent._call_tool("mcp_tools", {"server": server}).output)
+                else:
+                    self._add_system("Usage: /mcp | /mcp tools [server] | /run mcp_call {...}")
             elif line.startswith("/image"):
                 rest = line.removeprefix("/image").strip()
                 if not rest:

@@ -10,6 +10,7 @@ from evolva.agent.evolution import SelfEvolutionEngine
 from evolva.agent.images import user_content_with_images
 from evolva.agent.llm import OpenAICompatibleLLM, extract_json_object
 from evolva.agent.memory import MemoryStore
+from evolva.agent.mcp import MCPManager
 from evolva.agent.multi_agent import MultiAgentCoordinator
 from evolva.agent.policy import PolicyConfig, PolicyEngine
 from evolva.agent.sandbox import Sandbox, SandboxPolicy
@@ -61,9 +62,10 @@ class EvolvaAgent:
         self.sandbox = Sandbox(SandboxPolicy(self.config.root, self.config.workspace, self.config.sandbox_allow_shell))
         self.policy = PolicyEngine(PolicyConfig(self.config.root, self.config.workspace))
         self.tracer = TraceRecorder(self.config.traces_dir, enabled=self.config.tracing_enabled)
+        self.mcp = MCPManager(self.config.mcp_config_file, root=self.config.root)
         self.llm = OpenAICompatibleLLM(self.config)
         self.coordinator = MultiAgentCoordinator(self.llm, self.memory, self.skills, self.todos)
-        self.tools: ToolRegistry = build_registry(self.sandbox, self.memory, self.skills, self.context, self.todos, self.coordinator, self.policy)
+        self.tools: ToolRegistry = build_registry(self.sandbox, self.memory, self.skills, self.context, self.todos, self.coordinator, self.policy, self.mcp)
         self.evolution = SelfEvolutionEngine(self.memory, self.skills)
         self.assume_yes = assume_yes
         self.confirmer = confirmer

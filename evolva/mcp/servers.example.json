@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "filesystem": {
+      "enabled": false,
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "evolva/workspace"]
+    }
+  }
+}

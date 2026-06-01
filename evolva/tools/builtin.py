@@ -7,6 +7,7 @@ from pathlib import Path
 
 from evolva.agent.context import ContextStore
 from evolva.agent.memory import MemoryStore
+from evolva.agent.mcp import MCPManager, render_mcp_result
 from evolva.agent.multi_agent import MultiAgentCoordinator
 from evolva.agent.policy import PolicyEngine
 from evolva.agent.sandbox import Sandbox
@@ -23,6 +24,7 @@ def build_registry(
     todos: TodoStore,
     coordinator: MultiAgentCoordinator | None = None,
     policy: PolicyEngine | None = None,
+    mcp: MCPManager | None = None,
 ) -> ToolRegistry:
     reg = ToolRegistry()
 
@@ -141,6 +143,29 @@ def build_registry(
         decision = policy.check_tool(tool_name, args or {})
         return ToolResult(True, json.dumps(decision.to_dict(), ensure_ascii=False, indent=2), decision.to_dict())
 
+    def mcp_servers() -> ToolResult:
+        if mcp is None:
+            return ToolResult(False, "MCP manager is not configured")
+        names = mcp.list_servers()
+        return ToolResult(True, "\n".join(names) or "No MCP servers configured", names)
+
+    def mcp_tools(server: str = "") -> ToolResult:
+        if mcp is None:
+            return ToolResult(False, "MCP manager is not configured")
+        rows = mcp.list_tools(server or None)
+        lines = []
+        for item in rows:
+            lines.append(f"- {item.get('server')}/{item.get('name')}: {item.get('description', '')}")
+        return ToolResult(True, "\n".join(lines) or "No MCP tools", rows)
+
+    def mcp_call(server: str, tool: str, arguments: dict | None = None) -> ToolResult:
+        if mcp is None:
+            return ToolResult(False, "MCP manager is not configured")
+        result = mcp.call_tool(server, tool, arguments or {})
+        output = render_mcp_result(result)
+        context.add("artifact", f"MCP {server}/{tool}\n{output[:1000]}", meta={"server": server, "tool": tool})
+        return ToolResult(not bool(result.get("isError")), output, result)
+
     def delegate_agent(role: str, task: str, context_text: str = "") -> ToolResult:
         if coordinator is None:
             return ToolResult(False, "Multi-agent coordinator is not configured")
@@ -175,6 +200,9 @@ def build_registry(
     reg.register(Tool("sandbox_info", "Show sandbox root, workspace, and policy", {}, sandbox_info))
     reg.register(Tool("policy_info", "Show guardrail policy configuration", {}, policy_info))
     reg.register(Tool("policy_check", "Preview whether policy allows a tool call", {"tool_name": "str", "args": "dict"}, policy_check))
+    reg.register(Tool("mcp_servers", "List configured MCP servers", {}, mcp_servers))
+    reg.register(Tool("mcp_tools", "List tools from configured MCP servers", {"server": "str"}, mcp_tools))
+    reg.register(Tool("mcp_call", "Call an MCP tool via stdio JSON-RPC", {"server": "str", "tool": "str", "arguments": "dict"}, mcp_call, needs_confirmation=True))
     reg.register(Tool("delegate_agent", "Delegate a task to a role agent: planner, researcher, coder, reviewer", {"role": "str", "task": "str", "context_text": "str"}, delegate_agent))
     reg.register(Tool("collaborate", "Run a task through multiple role agents", {"task": "str", "roles": "list[str]", "context_text": "str"}, collaborate))
     return reg

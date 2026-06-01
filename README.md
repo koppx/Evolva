@@ -11,6 +11,7 @@
 - **多模态图片输入**：CLI/TUI 可通过图片路径或 URL 提问；在配置支持视觉的 OpenAI-compatible 模型后生效
 - **OpenAI-compatible LLM**：支持 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`
 - **工具调用**：文件读写/列表、shell、Python 代码执行、Web 搜索、记忆检索、技能管理
+- **MCP stdio 集成**：可配置 MCP server，列出远端 tools，并通过 `mcp_call` 调用外部工具生态
 - **可观测性 Trace**：每轮记录 prompt、LLM 响应、policy decision、tool call、latency、失败工具和最终回答，支持 list/show/replay
 - **Eval Harness**：支持 JSONL 任务集、产物/文本/工具错误 scorer、结果报告，适合演示 Agent 质量闭环
 - **Guardrails / Policy Engine**：工具执行前做风险分级、危险 shell denylist、路径逃逸检查、secret pattern 检测、网络开关
@@ -21,7 +22,7 @@
 - **TodoList**：`evolva/todo/todos.json` 持久化任务状态，支持 pending/in_progress/blocked/done/cancelled
 - **规划-执行-反思循环**：Agent 每轮可给出计划并调用工具完成任务
 - **长期记忆**：`evolva/memory/memory.jsonl` 持久化 facts/preferences/lessons
-- **技能系统**：`evolva/skills/*.md` 存放可演化技能
+- **技能系统**：`evolva/skills/*.md` 存放可演化技能；MCP 连接方式也可以沉淀为 skill/playbook
 - **自我进化**：从反馈、失败、成功经验中沉淀 lesson/skill；支持显式 `/evolve` 和自动反思
 - **安全边界**：默认仅在工作区内读写；shell 有危险命令拦截，可用 `--yes` 跳过交互确认
 
@@ -60,6 +61,8 @@ evolva tui
 /trace list          查看最近执行 trace
 /trace show <run>    查看单次执行详情
 /policy              查看 guardrail 策略
+/mcp                 查看 MCP servers
+/mcp tools [server]  查看 MCP tools
 /image <path|url> [text]
                      对图片提问，需要视觉模型
 /evolve [feedback]   基于反馈/最近对话自我进化
@@ -87,6 +90,29 @@ python3 -m evolva.cli workflow path/to/workflow.json --yes
 # 图片对话：可使用本地图片或图片 URL，需要视觉模型
 python3 -m evolva.cli ask "请描述这张图" --image evolva/workspace/example.png
 ```
+
+## MCP 支持
+
+Evolva 内置一个轻量 stdio MCP client。默认不会启动任何外部 MCP server；你可以复制示例配置后按需启用：
+
+```bash
+cp evolva/mcp/servers.example.json evolva/mcp/servers.json
+# 编辑 evolva/mcp/servers.json，将需要的 server enabled 改为 true
+
+python3 -m evolva.cli mcp servers
+python3 -m evolva.cli mcp tools filesystem
+python3 -m evolva.cli mcp call filesystem list_directory '{"path":"."}' --yes
+```
+
+在对话中也可以使用：
+
+```text
+/mcp
+/mcp tools filesystem
+/run mcp_call {"server":"filesystem","tool":"list_directory","arguments":{"path":"."}}
+```
+
+MCP 调用属于外部工具执行，默认需要确认；使用 `--yes` 或 TUI 确认后执行。
 
 Eval 任务示例：
 
@@ -148,6 +174,7 @@ evolva/
   agent/sandbox.py   沙箱策略与执行
   agent/policy.py    Guardrails / policy engine
   agent/tracing.py   执行 trace 与 replay
+  agent/mcp.py       stdio MCP client
   agent/multi_agent.py 多 agent 协作编排
   agent/todo.py      TodoList 管理
   agent/llm.py       OpenAI-compatible 客户端和 fallback
@@ -157,6 +184,7 @@ evolva/
   tools/builtin.py   常见工具
   eval/harness.py    Eval Harness
   workflow/engine.py Workflow DAG 执行器
+  mcp/servers.example.json MCP 示例配置
   workspace/         Agent 默认工作区
   traces/            执行轨迹
   eval_results/      Eval 结果

@@ -27,6 +27,8 @@ Commands:
   /trace list          List recent traces
   /trace show <run>    Show a trace
   /policy              Show guardrail policy
+  /mcp                 List MCP servers
+  /mcp tools [server]  List MCP tools
   /image <path|url> [text]
                        Ask with one image
   /evolve [feedback]   Turn feedback into memory + skill
@@ -90,6 +92,16 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
         return True
     if line == "/policy":
         print(agent.policy.as_tool_result().output)
+        return True
+    if line.startswith("/mcp"):
+        rest = line.removeprefix("/mcp").strip()
+        if not rest:
+            print(agent._call_tool("mcp_servers", {}).output)
+        elif rest.startswith("tools"):
+            server = rest.removeprefix("tools").strip()
+            print(agent._call_tool("mcp_tools", {"server": server}).output)
+        else:
+            print("Usage: /mcp | /mcp tools [server] | /run mcp_call {...}")
         return True
     if line.startswith("/image"):
         rest = line.removeprefix("/image").strip()
@@ -207,6 +219,26 @@ def workflow_cmd(args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
+def mcp_cmd(args: argparse.Namespace) -> int:
+    agent = EvolvaAgent(AgentConfig(), assume_yes=args.yes)
+    if args.mcp_cmd == "servers":
+        print(agent._call_tool("mcp_servers", {}).output)
+        return 0
+    if args.mcp_cmd == "tools":
+        print(agent._call_tool("mcp_tools", {"server": args.server or ""}).output)
+        return 0
+    if args.mcp_cmd == "call":
+        try:
+            arguments: dict[str, Any] = json.loads(args.arguments or "{}")
+        except json.JSONDecodeError as exc:
+            print(f"JSON error: {exc}")
+            return 2
+        result = agent._call_tool("mcp_call", {"server": args.server, "tool": args.tool, "arguments": arguments})
+        print(result.output)
+        return 0 if result.ok else 1
+    raise SystemExit("unknown mcp command")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="evolva")
     sub = parser.add_subparsers(dest="cmd", required=False)
@@ -248,6 +280,22 @@ def build_parser() -> argparse.ArgumentParser:
     workflow_p.add_argument("spec", type=lambda s: __import__("pathlib").Path(s))
     workflow_p.add_argument("--yes", action="store_true", help="Approve shell/python tools during workflow")
     workflow_p.set_defaults(func=workflow_cmd)
+
+    mcp_p = sub.add_parser("mcp", help="Inspect or call MCP stdio servers")
+    mcp_sub = mcp_p.add_subparsers(dest="mcp_cmd", required=True)
+    mcp_servers_p = mcp_sub.add_parser("servers", help="List configured MCP servers")
+    mcp_servers_p.add_argument("--yes", action="store_true")
+    mcp_servers_p.set_defaults(func=mcp_cmd)
+    mcp_tools_p = mcp_sub.add_parser("tools", help="List MCP tools")
+    mcp_tools_p.add_argument("server", nargs="?")
+    mcp_tools_p.add_argument("--yes", action="store_true")
+    mcp_tools_p.set_defaults(func=mcp_cmd)
+    mcp_call_p = mcp_sub.add_parser("call", help="Call an MCP tool")
+    mcp_call_p.add_argument("server")
+    mcp_call_p.add_argument("tool")
+    mcp_call_p.add_argument("arguments", nargs="?", default="{}", help="JSON arguments")
+    mcp_call_p.add_argument("--yes", action="store_true", help="Approve MCP tool call without prompting")
+    mcp_call_p.set_defaults(func=mcp_cmd)
     return parser
 
 

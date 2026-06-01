@@ -19,3 +19,4 @@ evolva/traces/
 evolva/eval_results/
 evolva/workflows/
 evolva/workspace/
+evolva/mcp/servers.json

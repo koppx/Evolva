@@ -12,6 +12,7 @@ from evolva.config import AgentConfig
 from evolva.agent.policy import PolicyConfig, PolicyEngine
 from evolva.agent.tracing import TraceRecorder
 from evolva.agent.images import user_content_with_images
+from evolva.agent.mcp import MCPManager, render_mcp_result
 from evolva.eval.harness import EvalHarness
 from evolva.workflow.engine import WorkflowEngine
 
@@ -169,3 +170,15 @@ def test_agent_message_supports_images(tmp_path):
     agent = EvolvaAgent(cfg, assume_yes=True)
     messages = agent._messages("what is this", "", image_sources=["tiny.png"])
     assert isinstance(messages[-1]["content"], list)
+
+
+def test_mcp_manager_loads_config(tmp_path):
+    config = tmp_path / "servers.json"
+    config.write_text('{"servers":{"demo":{"command":"python3","args":["server.py"]}}}', encoding="utf-8")
+    manager = MCPManager(config, root=tmp_path)
+    assert manager.list_servers() == ["demo"]
+
+
+def test_render_mcp_text_result():
+    result = {"content": [{"type": "text", "text": "hello"}]}
+    assert render_mcp_result(result) == "hello"
