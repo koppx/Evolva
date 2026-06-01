@@ -137,9 +137,31 @@ def test_workflow_engine_tool_role_agent_templates_and_errors(temp_config):
 
 def test_eval_harness_score_summary_report_and_run_file(temp_config, tmp_path):
     harness = EvalHarness(temp_config, assume_yes=True)
-    checks = harness.score({"expected_contains": ["ok"], "expected_artifacts": ["evolva/workspace/out.txt"], "scorers": ["no_tool_error"]}, "ok", [])
+    harness.agent.memory.add("fact", "Eval remembers memory state")
+    harness.agent.context.add("decision", "Eval checks context state")
+    checks = harness.score(
+        {
+            "expected_contains": ["ok"],
+            "forbidden_contains": ["bad"],
+            "expected_regex": ["^ok$"],
+            "expected_artifacts": ["evolva/workspace/out.txt", "../escape.txt"],
+            "expected_memory": ["memory state"],
+            "expected_context": ["context state"],
+            "max_duration_ms": 500,
+            "scorers": ["no_tool_error"],
+        },
+        "ok",
+        [],
+        duration_ms=10,
+    )
     assert checks["contains:ok"]
+    assert checks["not_contains:bad"]
+    assert checks["regex:^ok$"]
     assert not checks["artifact_exists:evolva/workspace/out.txt"]
+    assert not checks["artifact_inside_root:../escape.txt"]
+    assert checks["memory:memory state"]
+    assert checks["context:context state"]
+    assert checks["duration<=500ms"]
     assert checks["no_tool_error"]
 
     results = [EvalResult("a", True, 1.0, {}, "ok"), EvalResult("b", False, 0.0, {}, "bad")]

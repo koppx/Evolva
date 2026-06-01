@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -45,7 +46,8 @@ class EvalHarness:
     def run_task(self, task: dict[str, Any]) -> EvalResult:
         started = time.time()
         result = self.agent.chat(str(task["input"]))
-        checks = self.score(task, result.answer, result.tool_logs)
+        duration_ms = int((time.time() - started) * 1000)
+        checks = self.score(task, result.answer, result.tool_logs, duration_ms=duration_ms)
         passed = all(checks.values()) if checks else bool(result.answer.strip())
         score = sum(1 for ok in checks.values() if ok) / max(1, len(checks))
         return EvalResult(
@@ -55,20 +57,41 @@ class EvalHarness:
             checks=checks,
             answer=result.answer,
             tool_logs=result.tool_logs,
-            duration_ms=int((time.time() - started) * 1000),
+            duration_ms=duration_ms,
         )
 
-    def score(self, task: dict[str, Any], answer: str, tool_logs: list[str]) -> dict[str, bool]:
+    def score(self, task: dict[str, Any], answer: str, tool_logs: list[str], *, duration_ms: int | None = None) -> dict[str, bool]:
         text = answer + "\n" + "\n".join(tool_logs)
         checks: dict[str, bool] = {}
         for expected in task.get("expected_contains", []):
             checks[f"contains:{expected}"] = str(expected) in text
+        for forbidden in task.get("forbidden_contains", []):
+            checks[f"not_contains:{forbidden}"] = str(forbidden) not in text
+        for pattern in task.get("expected_regex", []):
+            checks[f"regex:{pattern}"] = re.search(str(pattern), text, flags=re.MULTILINE) is not None
         for artifact in task.get("expected_artifacts", []):
-            path = (self.config.root / str(artifact)).resolve()
-            checks[f"artifact_exists:{artifact}"] = path.exists()
+            path = self._safe_artifact_path(str(artifact))
+            checks[f"artifact_inside_root:{artifact}"] = path is not None
+            checks[f"artifact_exists:{artifact}"] = bool(path and path.exists())
+        for expected in task.get("expected_memory", []):
+            query = str(expected)
+            checks[f"memory:{query}"] = query in self.agent.memory.context(query)
+        for expected in task.get("expected_context", []):
+            query = str(expected)
+            checks[f"context:{query}"] = query in self.agent.context.render(query=query)
+        if "max_duration_ms" in task and duration_ms is not None:
+            checks[f"duration<={task['max_duration_ms']}ms"] = duration_ms <= int(task["max_duration_ms"])
         if "no_tool_error" in task.get("scorers", []):
             checks["no_tool_error"] = "ok=False" not in text and "Tool error" not in text
         return checks
+
+    def _safe_artifact_path(self, artifact: str) -> Path | None:
+        path = (self.config.root / artifact).resolve()
+        try:
+            path.relative_to(self.config.root.resolve())
+        except ValueError:
+            return None
+        return path
 
     def write_report(self, results: list[EvalResult], name: str = "eval") -> Path:
         ts = time.strftime("%Y%m%d_%H%M%S")

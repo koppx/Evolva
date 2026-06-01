@@ -144,6 +144,8 @@ Eval task 示例：
 {"id":"tool_write_read_001","input":"创建 hello.py 并运行","expected_artifacts":["evolva/workspace/hello.py"],"expected_contains":["hello"],"scorers":["no_tool_error"]}
 ```
 
+支持的检查项包括：`expected_contains`、`forbidden_contains`、`expected_regex`、`expected_artifacts`、`expected_memory`、`expected_context`、`max_duration_ms` 和 `no_tool_error` scorer。
+
 结果会写入：
 
 ```text
