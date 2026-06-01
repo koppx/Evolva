@@ -8,9 +8,6 @@
 
 Evolva 的目标是提供一个可本地运行、依赖极少、便于二次开发的 Agent 工程框架。
 
-<p align="center">
-  <img src="assets/evolva-logo.svg" alt="Evolva logo" width="720" />
-</p>
 
 ## 能力
 
