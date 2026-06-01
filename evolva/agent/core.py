@@ -7,6 +7,7 @@ from typing import Any
 
 from evolva.agent.context import ContextStore
 from evolva.agent.evolution import SelfEvolutionEngine
+from evolva.agent.images import user_content_with_images
 from evolva.agent.llm import OpenAICompatibleLLM, extract_json_object
 from evolva.agent.memory import MemoryStore
 from evolva.agent.multi_agent import MultiAgentCoordinator
@@ -66,14 +67,18 @@ class EvolvaAgent:
         self.evolution = SelfEvolutionEngine(self.memory, self.skills)
         self.assume_yes = assume_yes
         self.confirmer = confirmer
-        self.history: list[dict[str, str]] = []
+        self.history: list[dict[str, Any]] = []
 
-    def chat(self, user_message: str) -> TurnResult:
+    def chat(self, user_message: str, image_sources: list[str] | None = None) -> TurnResult:
         self.tracer.start(
             user_message,
-            meta={"model": self.config.model, "llm_available": self.llm.available, "max_steps": self.config.max_steps},
+            meta={"model": self.config.model, "llm_available": self.llm.available, "max_steps": self.config.max_steps, "images": image_sources or []},
         )
         if not self.llm.available:
+            if image_sources:
+                result = TurnResult("未配置 OPENAI_API_KEY，当前规则模式无法理解图片。请配置支持视觉的 OpenAI-compatible 模型后重试。")
+                self.tracer.end(result.answer, status="fallback_no_vision")
+                return result
             result = self._fallback_chat(user_message)
             self.tracer.end(result.answer, status="fallback")
             return result
@@ -83,7 +88,7 @@ class EvolvaAgent:
         scratch = ""
         final = ""
         for _ in range(self.config.max_steps):
-            messages = self._messages(user_message, scratch)
+            messages = self._messages(user_message, scratch, image_sources=image_sources)
             self.tracer.event("prompt", {"message_count": len(messages), "scratch_chars": len(scratch), "system_chars": len(messages[0]["content"])})
             raw = self.llm.chat(messages).content
             self.tracer.event("llm_response", {"raw": raw[:4000]})
@@ -109,9 +114,10 @@ class EvolvaAgent:
         else:
             final = "达到最大执行步数，已停止。已完成的工具结果如下：\n" + "\n".join(tool_logs[-3:])
 
-        self.history.append({"role": "user", "content": user_message})
+        history_user = user_message if not image_sources else f"{user_message}\n[Images: {', '.join(image_sources)}]"
+        self.history.append({"role": "user", "content": history_user})
         self.history.append({"role": "assistant", "content": final})
-        self.context.add("message", user_message, role="user")
+        self.context.add("message", history_user, role="user")
         self.context.add("message", final, role="assistant")
         self.tracer.event("context_write", {"items": 2})
         if self.config.auto_evolve:
@@ -120,7 +126,7 @@ class EvolvaAgent:
         self.tracer.end(final, status="completed" if not failed_tools else "completed_with_tool_failures")
         return TurnResult(answer=final, tool_logs=tool_logs, failed_tools=failed_tools)
 
-    def _messages(self, user_message: str, scratch: str) -> list[dict[str, str]]:
+    def _messages(self, user_message: str, scratch: str, image_sources: list[str] | None = None) -> list[dict[str, Any]]:
         context = (
             f"Relevant memories:\n{self.memory.context(user_message)}\n\n"
             f"Persistent context:\n{self.context.prompt_context(user_message)}\n\n"
@@ -133,7 +139,7 @@ class EvolvaAgent:
         )
         messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n\n" + context}]
         messages.extend(self.history[-8:])
-        messages.append({"role": "user", "content": user_message})
+        messages.append({"role": "user", "content": user_content_with_images(user_message, image_sources, root=self.config.root)})
         return messages
 
     def _call_tool(self, name: str, args: dict[str, Any]) -> ToolResult:

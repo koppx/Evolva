@@ -27,6 +27,8 @@ Commands:
   /trace list          List recent traces
   /trace show <run>    Show a trace
   /policy              Show guardrail policy
+  /image <path|url> [text]
+                       Ask with one image
   /evolve [feedback]   Turn feedback into memory + skill
   /workflow <json>     Run a workflow spec file
   /run <tool> <json>   Call a tool directly
@@ -88,6 +90,17 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
         return True
     if line == "/policy":
         print(agent.policy.as_tool_result().output)
+        return True
+    if line.startswith("/image"):
+        rest = line.removeprefix("/image").strip()
+        if not rest:
+            print("Usage: /image <path-or-url> [question]")
+            return True
+        parts = shlex.split(rest)
+        image = parts[0]
+        question = " ".join(parts[1:]) or "请分析这张图片。"
+        result = agent.chat(question, image_sources=[image])
+        print(result.answer)
         return True
     if line.startswith("/evolve"):
         feedback = line.removeprefix("/evolve").strip()
@@ -151,7 +164,7 @@ def chat(args: argparse.Namespace) -> int:
 
 def once(args: argparse.Namespace) -> int:
     agent = EvolvaAgent(AgentConfig(), assume_yes=args.yes)
-    result = agent.chat(args.message)
+    result = agent.chat(args.message, image_sources=args.image or None)
     if args.show_tools and result.tool_logs:
         print_block("tool logs", "\n\n".join(result.tool_logs))
     print(result.answer)
@@ -204,6 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     once_p = sub.add_parser("ask", help="Ask one question and exit")
     once_p.add_argument("message")
+    once_p.add_argument("--image", action="append", help="Attach an image path or URL; can be repeated")
     once_p.add_argument("--yes", action="store_true")
     once_p.add_argument("--show-tools", action="store_true")
     once_p.set_defaults(func=once)

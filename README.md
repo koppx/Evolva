@@ -8,6 +8,7 @@
 
 - **CLI 多轮对话**：`python3 -m evolva.cli chat`
 - **TUI 终端界面**：`python3 -m evolva.cli tui`，提供聊天区、工具日志侧栏、状态栏、输入历史、滚动和命令补全
+- **多模态图片输入**：CLI/TUI 可通过图片路径或 URL 提问；在配置支持视觉的 OpenAI-compatible 模型后生效
 - **OpenAI-compatible LLM**：支持 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`
 - **工具调用**：文件读写/列表、shell、Python 代码执行、Web 搜索、记忆检索、技能管理
 - **可观测性 Trace**：每轮记录 prompt、LLM 响应、policy decision、tool call、latency、失败工具和最终回答，支持 list/show/replay
@@ -59,15 +60,17 @@ evolva tui
 /trace list          查看最近执行 trace
 /trace show <run>    查看单次执行详情
 /policy              查看 guardrail 策略
+/image <path|url> [text]
+                     对图片提问，需要视觉模型
 /evolve [feedback]   基于反馈/最近对话自我进化
 /workflow <json>     运行 workflow spec
 /run <tool> <json>   直接调用工具，例如 /run list_files {"path":"."}
 /exit               退出
 ```
 
-## 高级能力：Trace / Eval / Policy / Workflow
+## 工程化能力：Trace / Eval / Policy / Workflow
 
-这些能力是面向高级 Agent 岗位面试重点补齐的工程闭环：不仅会“调工具”，还可以观测、评测、防护和编排。
+这些能力用于构建更完整的 Agent 工程闭环：不仅会“调工具”，还可以观测、评测、防护和编排。
 
 ```bash
 # Trace：查看与回放历史执行
@@ -80,6 +83,9 @@ python3 -m evolva.cli eval evals/tasks/smoke.jsonl --yes
 
 # Workflow：运行 JSON 工作流
 python3 -m evolva.cli workflow path/to/workflow.json --yes
+
+# 图片对话：可使用本地图片或图片 URL，需要视觉模型
+python3 -m evolva.cli ask "请描述这张图" --image evolva/workspace/example.png
 ```
 
 Eval 任务示例：

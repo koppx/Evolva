@@ -11,6 +11,7 @@ from evolva.agent.llm import OpenAICompatibleLLM
 from evolva.config import AgentConfig
 from evolva.agent.policy import PolicyConfig, PolicyEngine
 from evolva.agent.tracing import TraceRecorder
+from evolva.agent.images import user_content_with_images
 from evolva.eval.harness import EvalHarness
 from evolva.workflow.engine import WorkflowEngine
 
@@ -139,3 +140,32 @@ def test_eval_harness_scores_contains(tmp_path):
     checks = harness.score({"expected_contains": ["abc"], "scorers": ["no_tool_error"]}, "abc", [])
     assert checks["contains:abc"]
     assert checks["no_tool_error"]
+
+
+def test_image_content_part_from_local_png(tmp_path):
+    image = tmp_path / "tiny.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n")
+    content = user_content_with_images("describe", ["tiny.png"], root=tmp_path)
+    assert isinstance(content, list)
+    assert content[0] == {"type": "text", "text": "describe"}
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_agent_message_supports_images(tmp_path):
+    cfg = AgentConfig(
+        root=tmp_path,
+        workspace=tmp_path / "evolva" / "workspace",
+        memory_file=tmp_path / "evolva" / "memory" / "memory.jsonl",
+        skills_dir=tmp_path / "evolva" / "skills",
+        context_file=tmp_path / "evolva" / "context" / "context.json",
+        todo_file=tmp_path / "evolva" / "todo" / "todos.json",
+        traces_dir=tmp_path / "evolva" / "traces",
+        eval_results_dir=tmp_path / "evolva" / "eval_results",
+        workflows_dir=tmp_path / "evolva" / "workflows",
+    )
+    image = tmp_path / "tiny.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n")
+    agent = EvolvaAgent(cfg, assume_yes=True)
+    messages = agent._messages("what is this", "", image_sources=["tiny.png"])
+    assert isinstance(messages[-1]["content"], list)

@@ -25,7 +25,7 @@ class OpenAICompatibleLLM:
     def available(self) -> bool:
         return bool(self.config.api_key)
 
-    def chat(self, messages: list[dict[str, str]], *, temperature: float = 0.2) -> LLMResponse:
+    def chat(self, messages: list[dict[str, Any]], *, temperature: float = 0.2) -> LLMResponse:
         if not self.available:
             raise RuntimeError("OPENAI_API_KEY is not configured")
         url = self.config.base_url.rstrip("/") + "/chat/completions"
