@@ -33,6 +33,9 @@ def test_memory_search_ranks_exact_matches(tmp_path):
     assert len(store.all(limit=1)) == 1
     assert store.find_similar("fact", "Use pytest for unit tests") is not None
     assert store.stats()["total"] == 2
+    assert "fact: 1" in store.render_stats()
+    assert "Use pytest for unit tests" in store.render_items(query="pytest")
+    assert "Always run compileall" in store.render_items(limit=1)
 
 
 def test_skill_store_seeds_sanitizes_and_appends(tmp_path):

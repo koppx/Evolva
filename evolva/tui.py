@@ -26,7 +26,7 @@ TUI keys:
   /exit          Quit
 
 Commands:
-  /help, /tools, /skills, /memory [query], /context [query], /todo, /agents, /trace, /policy, /mcp, /image <path|url> [text], /evolve [feedback|status|trace|apply-trace|eval|apply-eval], /run <tool> <json>
+  /help, /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace, /policy, /mcp, /image <path|url> [text], /evolve [feedback|status|trace|apply-trace|eval|apply-eval], /run <tool> <json>
 """.strip()
 
 
@@ -240,7 +240,16 @@ class EvolvaTUI:
                 self._add_system(body)
             elif line.startswith("/memory"):
                 query = line.removeprefix("/memory").strip()
-                self._add_system(self.agent.memory.context(query))
+                if query in {"stats", "stat", "status"}:
+                    self._add_system(self.agent.memory.render_stats())
+                elif query.startswith("recent"):
+                    parts = query.split()
+                    limit = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 10
+                    self._add_system(self.agent.memory.render_items(limit=limit))
+                elif query.startswith("search "):
+                    self._add_system(self.agent.memory.render_items(query=query.removeprefix("search ").strip(), limit=10))
+                else:
+                    self._add_system(self.agent.memory.context(query))
             elif line.startswith("/context"):
                 query = line.removeprefix("/context").strip()
                 self._add_system(self.agent.context.render(query=query))

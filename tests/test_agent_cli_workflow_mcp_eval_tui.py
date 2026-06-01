@@ -216,7 +216,7 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     assert "已记住" in capsys.readouterr().out
 
     agent = EvolvaAgent(temp_config, assume_yes=True)
-    for line in ["/help", "/tools", "/skills", "/memory", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", "/policy", "/mcp", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/workflow", "/run sandbox_info {}", "/unknown"]:
+    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", "/policy", "/mcp", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/workflow", "/run sandbox_info {}", "/unknown"]:
         assert handle_command(agent, line) is True
     assert handle_command(agent, "/exit") is False
     output = capsys.readouterr().out
@@ -263,6 +263,11 @@ def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, t
     assert any("TUI keys" in m.text for m in app.messages)
     app._handle_command("/todo add tui task")
     assert any("Added todo" in m.text for m in app.messages)
+    app.agent.memory.add("fact", "TUI memory detail")
+    app._handle_command("/memory stats")
+    assert any("Memory stats" in m.text for m in app.messages)
+    app._handle_command("/memory recent 1")
+    assert any("TUI memory detail" in m.text for m in app.messages)
     app._handle_command("/evolve status")
     assert any("Evolution status" in m.text for m in app.messages)
     app._handle_command("/evolve trace")

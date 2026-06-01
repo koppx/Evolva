@@ -21,6 +21,8 @@ Commands:
   /tools               List tools
   /skills              List skills
   /memory [query]      Show/search memory
+  /memory stats        Show memory counts by kind
+  /memory recent [n]   Show recent memories
   /context [query]     Show/search persistent context
   /todo                Show todo list
   /todo add <title>    Add a todo
@@ -66,7 +68,16 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
         return True
     if line.startswith("/memory"):
         query = line.removeprefix("/memory").strip()
-        print(agent.memory.context(query))
+        if query in {"stats", "stat", "status"}:
+            print(agent.memory.render_stats())
+        elif query.startswith("recent"):
+            parts = query.split()
+            limit = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 10
+            print(agent.memory.render_items(limit=limit))
+        elif query.startswith("search "):
+            print(agent.memory.render_items(query=query.removeprefix("search ").strip(), limit=10))
+        else:
+            print(agent.memory.context(query))
         return True
     if line.startswith("/context"):
         query = line.removeprefix("/context").strip()

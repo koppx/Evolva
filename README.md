@@ -100,6 +100,8 @@ python3 -m evolva.cli ask "请描述这张图" --image evolva/workspace/example.
 /tools               列出工具
 /skills              列出技能
 /memory [query]      查看或搜索长期记忆
+/memory stats        查看记忆数量统计
+/memory recent [n]   查看最近写入的记忆
 /context [query]     查看或搜索持久上下文
 /todo                查看 TodoList
 /todo add <title>    添加 todo

@@ -57,6 +57,24 @@ class MemoryStore:
         counts["total"] = sum(counts.values())
         return counts
 
+    def render_stats(self) -> str:
+        stats = self.stats()
+        total = stats.pop("total", 0)
+        lines = ["Memory stats", f"- total: {total}"]
+        for kind, count in sorted(stats.items()):
+            lines.append(f"- {kind}: {count}")
+        return "\n".join(lines)
+
+    def render_items(self, *, query: str = "", limit: int = 10) -> str:
+        items = self.search(query, limit=limit) if query else self.all(limit)
+        if not items:
+            return "No memories."
+        lines = []
+        for item in items:
+            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item.ts))
+            lines.append(f"- [{item.kind}/{item.confidence:.1f}] {item.content} ({item.source}, {ts})")
+        return "\n".join(lines)
+
     def all(self, limit: int = 50) -> list[MemoryItem]:
         if not self.path.exists():
             return []
