@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.pycache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual env / IDE
+.venv/
+.idea/
+.DS_Store
+
+# Local Evolva runtime state
+evolva/context/
+evolva/memory/
+evolva/todo/
+evolva/traces/
+evolva/eval_results/
+evolva/workflows/
+evolva/workspace/
