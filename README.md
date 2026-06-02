@@ -44,7 +44,7 @@
 
 ## Architecture
 
-Evolva 的架构图：入口进入 Core，Core 读取/写入状态；执行链路固定为 Policy → Sandbox → Tools；Tools 再扩展到 MCP、Sub Agents 和 Workflow；Policy、Sandbox、Tools 的关键事件汇入 Trace，再由 Eval 和 Evolution 形成反馈闭环。
+Evolva 的架构图采用横向分层布局：上层是 Interface、Core 与持久化状态；中层是 Policy → Sandbox → Tools 的安全执行链路，并扩展到 MCP、Sub Agents 与 Workflow；下层是 Trace → Eval → Evolution 的反馈闭环。
 
 <p align="center">
   <img src="assets/architecture.svg" alt="Evolva clean architecture diagram" width="100%" />

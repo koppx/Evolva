@@ -1,135 +1,137 @@
-<svg width="1400" height="760" viewBox="0 0 1400 760" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Evolva architecture diagram">
+<svg width="1400" height="800" viewBox="0 0 1400 800" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Evolva Agent Architecture">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1400" y2="760">
+    <linearGradient id="bg" x1="0" y1="0" x2="1400" y2="800">
       <stop stop-color="#050505"/>
-      <stop offset="1" stop-color="#0B0905"/>
-    </linearGradient>
-    <linearGradient id="coreFill" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#24170D"/>
-      <stop offset="1" stop-color="#10100E"/>
-    </linearGradient>
-    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#F3D98F"/>
-      <stop offset="1" stop-color="#8E682A"/>
+      <stop offset="1" stop-color="#080806"/>
     </linearGradient>
     <filter id="shadow">
-      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.5"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="13" flood-color="#000000" flood-opacity="0.52"/>
     </filter>
-    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
-      <path d="M0 0L8 4.5L0 9Z" fill="#B9944D"/>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0 0L9 5L0 10Z" fill="#C39A4F"/>
     </marker>
     <style>
-      .title{font-family:Inter,Arial,sans-serif;font-size:36px;font-weight:760;fill:#EFD486}
-      .subtitle{font-family:Inter,Arial,sans-serif;font-size:18px;fill:#A58B55}
-      .section{font-family:Inter,Arial,sans-serif;font-size:12px;letter-spacing:.11em;text-transform:uppercase;fill:#8F7339}
-      .label{font-family:Inter,Arial,sans-serif;font-size:21px;font-weight:700;fill:#F0D58E}
-      .small{font-family:Inter,Arial,sans-serif;font-size:13px;fill:#A98A4B}
-      .box{fill:#0E0E0D;stroke:#6E5120;stroke-width:1.4;filter:url(#shadow)}
-      .stateBox{fill:#0B0B0A;stroke:#3D2D13;stroke-width:1.2}
-      .arrow{stroke:#B9944D;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;marker-end:url(#arrow)}
-      .thin{stroke:#6F5527;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;marker-end:url(#arrow);opacity:.82}
-      .bus{stroke:#4B391A;stroke-width:1.3;stroke-linecap:round;opacity:.72}
+      .title{font-family:Inter,Arial,sans-serif;font-size:40px;font-weight:780;fill:#F0D58E}
+      .subtitle{font-family:Inter,Arial,sans-serif;font-size:18px;fill:#C2A265}
+      .section{font-family:Inter,Arial,sans-serif;font-size:13px;letter-spacing:.15em;text-transform:uppercase;fill:#A88948}
+      .box{fill:#0D0E0E;stroke:#A77B35;stroke-width:1.35;filter:url(#shadow)}
+      .panel{fill:#0B0C0C;stroke:#7B5A27;stroke-width:1.25;filter:url(#shadow)}
+      .label{font-family:Inter,Arial,sans-serif;font-size:23px;font-weight:760;fill:#F0D58E}
+      .small{font-family:Inter,Arial,sans-serif;font-size:13.5px;fill:#B89455}
+      .mini{font-family:Inter,Arial,sans-serif;font-size:12.5px;fill:#C2A265}
+      .line{stroke:#C39A4F;stroke-width:2;stroke-linecap:square;stroke-linejoin:miter;marker-end:url(#arrow)}
+      .plain{stroke:#C39A4F;stroke-width:2;stroke-linecap:square;stroke-linejoin:miter}
     </style>
   </defs>
 
-  <rect width="1400" height="760" rx="30" fill="url(#bg)"/>
-  <rect x="1" y="1" width="1398" height="758" rx="29" stroke="#241A0B"/>
+  <rect width="1400" height="800" rx="28" fill="url(#bg)"/>
+  <rect x="4" y="4" width="1392" height="792" rx="26" stroke="#272724" stroke-width="1.2"/>
 
-  <text x="70" y="78" class="title">Evolva Agent Architecture</text>
-  <text x="70" y="114" class="subtitle">A local agent harness built around state, safe execution, observability, evaluation and evolution.</text>
+  <text x="60" y="74" class="title">Evolva Agent Architecture</text>
+  <text x="60" y="108" class="subtitle">A local agent harness built around state, safe execution, observability, evaluation and evolution.</text>
 
-  <text x="86" y="156" class="section">Interface</text>
-  <text x="380" y="156" class="section">Reasoning loop</text>
-  <text x="812" y="156" class="section">State and learning</text>
-  <text x="176" y="348" class="section">Guarded execution</text>
-  <text x="412" y="594" class="section">Feedback loop</text>
+  <text x="80" y="158" class="section">INTERFACE</text>
+  <text x="392" y="158" class="section">REASONING LOOP</text>
+  <text x="818" y="158" class="section">STATE AND LEARNING</text>
+  <text x="164" y="352" class="section">GUARDED EXECUTION</text>
+  <text x="388" y="608" class="section">FEEDBACK LOOP</text>
 
-  <!-- Top-level flow -->
-  <rect x="80" y="180" width="215" height="96" rx="20" class="box"/>
-  <text x="126" y="222" class="label">CLI / TUI</text>
-  <text x="112" y="249" class="small">chat · commands · image</text>
+  <!-- Interface and core -->
+  <rect x="72" y="178" width="222" height="100" rx="17" class="box"/>
+  <text x="132" y="224" class="label">CLI / TUI</text>
+  <text x="103" y="252" class="small">chat · commands · image</text>
 
-  <rect x="380" y="164" width="300" height="128" rx="26" fill="url(#coreFill)" stroke="url(#gold)" stroke-width="1.8" filter="url(#shadow)"/>
-  <text x="446" y="215" class="label" font-size="28">Evolva Core</text>
-  <text x="433" y="246" class="small">plan · act · observe · reflect</text>
-  <rect x="458" y="260" width="145" height="22" rx="11" fill="#1B150B" stroke="#4A3514"/>
-  <text x="486" y="276" class="small" font-size="11">JSON steps</text>
+  <rect x="396" y="170" width="285" height="132" rx="21" class="box"/>
+  <text x="474" y="224" class="label">Evolva Core</text>
+  <text x="447" y="253" class="small">plan · act · observe · reflect</text>
+  <rect x="472" y="267" width="134" height="25" rx="12" fill="#17130B" stroke="#6D5120" stroke-width="1"/>
+  <text x="502" y="284" class="small">JSON steps</text>
 
-  <rect x="795" y="174" width="505" height="148" rx="24" fill="#0B0B0A" stroke="#3D2D13" stroke-width="1.2"/>
-  <text x="824" y="206" class="section">Persistent runtime assets</text>
-  <rect x="825" y="226" width="145" height="58" rx="14" class="stateBox"/>
-  <text x="861" y="262" class="label" font-size="18">Memory</text>
-  <rect x="985" y="226" width="145" height="58" rx="14" class="stateBox"/>
-  <text x="1024" y="262" class="label" font-size="18">Skills</text>
-  <rect x="1145" y="226" width="125" height="58" rx="14" class="stateBox"/>
-  <text x="1176" y="262" class="label" font-size="18">Todo</text>
-  <rect x="905" y="294" width="285" height="58" rx="14" class="stateBox"/>
-  <text x="996" y="330" class="label" font-size="18">Context</text>
+  <!-- State panel -->
+  <rect x="800" y="168" width="456" height="156" rx="22" class="panel"/>
+  <text x="824" y="200" class="section" style="font-size:12px;letter-spacing:.10em">PERSISTENT RUNTIME ASSETS</text>
+  <rect x="824" y="214" width="130" height="54" rx="12" class="box" filter="none"/>
+  <text x="853" y="249" class="label" style="font-size:21px">Memory</text>
+  <rect x="970" y="214" width="132" height="54" rx="12" class="box" filter="none"/>
+  <text x="1013" y="249" class="label" style="font-size:21px">Skills</text>
+  <rect x="1118" y="214" width="116" height="54" rx="12" class="box" filter="none"/>
+  <text x="1150" y="249" class="label" style="font-size:21px">Todo</text>
+  <rect x="900" y="282" width="250" height="56" rx="12" class="box" filter="none"/>
+  <text x="982" y="318" class="label" style="font-size:21px">Context</text>
 
   <!-- Execution row -->
-  <rect x="145" y="380" width="190" height="88" rx="18" class="box"/>
-  <text x="207" y="427" class="label" font-size="20">Policy</text>
-  <text x="180" y="450" class="small" font-size="12">risk · denylist · secrets</text>
+  <rect x="115" y="386" width="205" height="98" rx="17" class="box"/>
+  <text x="187" y="434" class="label" style="font-size:21px">Policy</text>
+  <text x="147" y="461" class="small">risk · denylist · secrets</text>
 
-  <rect x="425" y="380" width="190" height="88" rx="18" class="box"/>
-  <text x="476" y="427" class="label" font-size="20">Sandbox</text>
-  <text x="455" y="450" class="small" font-size="12">workspace · shell · python</text>
+  <rect x="405" y="386" width="205" height="98" rx="17" class="box"/>
+  <text x="464" y="434" class="label" style="font-size:21px">Sandbox</text>
+  <text x="428" y="461" class="small">workspace · shell · python</text>
 
-  <rect x="705" y="380" width="190" height="88" rx="18" class="box"/>
-  <text x="764" y="427" class="label" font-size="20">Tools</text>
-  <text x="747" y="450" class="small" font-size="12">files · web · todo · run</text>
+  <rect x="685" y="386" width="180" height="98" rx="17" class="box"/>
+  <text x="742" y="434" class="label" style="font-size:21px">Tools</text>
+  <text x="707" y="461" class="small">files · web · todo · run</text>
 
-  <rect x="1010" y="360" width="145" height="72" rx="17" class="box"/>
-  <text x="1045" y="402" class="label" font-size="19">MCP</text>
-  <text x="1041" y="422" class="small" font-size="11">external tools</text>
+  <rect x="952" y="368" width="154" height="72" rx="15" class="box"/>
+  <text x="996" y="404" class="label" style="font-size:21px">MCP</text>
+  <text x="985" y="425" class="small">external tools</text>
 
-  <rect x="1010" y="452" width="145" height="72" rx="17" class="box"/>
-  <text x="1048" y="491" class="label" font-size="18">Sub</text>
-  <text x="1038" y="513" class="label" font-size="18">Agents</text>
+  <rect x="952" y="464" width="154" height="76" rx="15" class="box"/>
+  <text x="1006" y="498" class="label" style="font-size:20px">Sub</text>
+  <text x="989" y="523" class="label" style="font-size:20px">Agents</text>
 
-  <rect x="1195" y="406" width="145" height="72" rx="17" class="box"/>
-  <text x="1221" y="449" class="label" font-size="18">Workflow</text>
-  <text x="1222" y="469" class="small" font-size="11">node runner</text>
+  <rect x="1160" y="414" width="155" height="76" rx="15" class="box"/>
+  <text x="1189" y="456" class="label" style="font-size:20px">Workflow</text>
+  <text x="1200" y="477" class="small">node runner</text>
 
   <!-- Feedback row -->
-  <rect x="325" y="615" width="205" height="82" rx="18" class="box"/>
-  <text x="383" y="660" class="label" font-size="20">Trace</text>
-  <text x="365" y="681" class="small" font-size="12">prompt · policy · tools</text>
+  <rect x="322" y="622" width="200" height="94" rx="16" class="box"/>
+  <text x="389" y="669" class="label" style="font-size:21px">Trace</text>
+  <text x="352" y="695" class="small">prompt · policy · tools</text>
 
-  <rect x="600" y="615" width="205" height="82" rx="18" class="box"/>
-  <text x="663" y="660" class="label" font-size="20">Eval</text>
-  <text x="641" y="681" class="small" font-size="12">regression checks</text>
+  <rect x="598" y="622" width="185" height="94" rx="16" class="box"/>
+  <text x="662" y="669" class="label" style="font-size:21px">Eval</text>
+  <text x="633" y="695" class="small">regression checks</text>
 
-  <rect x="875" y="615" width="205" height="82" rx="18" class="box"/>
-  <text x="928" y="660" class="label" font-size="20">Evolution</text>
-  <text x="910" y="681" class="small" font-size="12">lessons · skills</text>
+  <rect x="866" y="622" width="185" height="94" rx="16" class="box"/>
+  <text x="915" y="669" class="label" style="font-size:21px">Evolution</text>
+  <text x="904" y="695" class="small">lessons · skills</text>
 
-  <!-- Main arrows stop before boxes; marker tips align with target edges. -->
-  <path class="arrow" d="M295 228H372"/>
-  <path class="arrow" d="M680 228H787"/>
+  <!-- Main flow arrows -->
+  <path class="line" d="M294 228H388"/>
+  <text x="334" y="217" class="mini">intent</text>
+  <path class="line" d="M681 228H792"/>
+  <text x="716" y="217" class="mini">state</text>
 
-  <path class="arrow" d="M530 292V344H240V372"/>
-  <path class="arrow" d="M335 424H417"/>
-  <path class="arrow" d="M615 424H697"/>
-  <path class="thin" d="M895 396H1002"/>
-  <path class="thin" d="M895 452H954V488H1002"/>
-  <path class="thin" d="M895 424H955V442H1187"/>
+  <path class="line" d="M320 435H397"/>
+  <text x="338" y="424" class="mini">approve</text>
+  <path class="line" d="M610 435H677"/>
+  <text x="625" y="424" class="mini">execute</text>
 
-  <!-- Observability bus: no dashed line and no arrow enters a box. -->
-  <path class="bus" d="M240 468V565H800V468"/>
-  <path class="bus" d="M520 468V565"/>
-  <path class="arrow" d="M428 565V607"/>
+  <path class="line" d="M865 404H944"/>
+  <path class="plain" d="M865 435H916V454H1152"/>
+  <path class="line" d="M916 454H1152"/>
+  <path class="plain" d="M865 452H902V502H944"/>
+  <path class="line" d="M902 502H944"/>
 
-  <path class="arrow" d="M530 656H592"/>
-  <path class="arrow" d="M805 656H867"/>
-  <path class="thin" d="M978 615V565H1048V360"/>
-  <path class="thin" d="M1006 615V585H1058V352"/>
+  <!-- Core to policy -->
+  <path class="plain" d="M538 302V355H218"/>
+  <path class="line" d="M218 355V378"/>
 
-  <text x="329" y="217" class="small" font-size="12">intent</text>
-  <text x="711" y="217" class="small" font-size="12">state</text>
-  <text x="363" y="414" class="small" font-size="12">approve</text>
-  <text x="644" y="414" class="small" font-size="12">execute</text>
-  <text x="460" y="552" class="small" font-size="12">record events</text>
-  <text x="548" y="645" class="small" font-size="12">score</text>
-  <text x="824" y="645" class="small" font-size="12">learn</text>
+  <!-- Context / MCP relationship -->
+  <path class="line" d="M1016 368V346"/>
+  <path class="line" d="M1040 338V360"/>
+
+  <!-- Feedback and event recording -->
+  <path class="plain" d="M1016 540V568H218V492"/>
+  <path class="line" d="M218 492V486"/>
+  <text x="464" y="555" class="mini">record events</text>
+
+  <path class="line" d="M522 669H590"/>
+  <text x="542" y="657" class="mini">score</text>
+  <path class="line" d="M783 669H858"/>
+  <text x="806" y="657" class="mini">learn</text>
+
+  <path class="plain" d="M1015 622V600H1042V548"/>
+  <path class="line" d="M1042 548V542"/>
 </svg>
