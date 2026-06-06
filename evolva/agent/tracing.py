@@ -107,6 +107,26 @@ class TraceRecorder:
         lines.append(data.get("final_answer", ""))
         return "\n".join(lines)
 
+    def render_context(self, run_id: str) -> str:
+        """Render prompt/context related trace events for debugging context assembly."""
+        data = self.load(run_id)
+        lines = [
+            f"Trace context: {data.get('run_id')}",
+            f"User: {data.get('user_input', '')}",
+            "Context events:",
+        ]
+        matched = False
+        for event in data.get("events", []):
+            kind = event.get("kind", "event")
+            payload = event.get("data", {}) or {}
+            if kind in {"run_meta", "prompt", "context_write", "auto_evolve"}:
+                matched = True
+                rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+                lines.append(f"- {kind}: {rendered[:2000]}")
+        if not matched:
+            lines.append("No context events recorded for this trace.")
+        return "\n".join(lines)
+
     def replay_prompt(self, run_id: str) -> str:
         data = self.load(run_id)
         return str(data.get("user_input", ""))

@@ -20,6 +20,9 @@ from evolva.workflow.engine import WorkflowEngine
 def test_agent_fallback_remember_read_list_and_image(temp_config):
     agent = EvolvaAgent(temp_config, assume_yes=True)
     assert "Evolva" in SYSTEM_PROMPT
+    assert agent.set_model("test-switch-model") == "test-switch-model"
+    assert agent.config.model == "test-switch-model"
+    assert agent.coordinator.llm is agent.llm
     assert agent.chat("remember Use pytest").answer == "已记住。"
     assert "pytest" in agent.memory.context("pytest")
     (temp_config.root / "note.txt").write_text("hello")
@@ -265,7 +268,10 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     assert "已记住" in capsys.readouterr().out
 
     agent = EvolvaAgent(temp_config, assume_yes=True)
-    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", "/policy", "/mcp", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/workflow", "/run sandbox_info {}", "/unknown"]:
+    run_id = agent.tracer.start("cli context")
+    agent.tracer.event("prompt", {"message_count": 1})
+    agent.tracer.end("ok")
+    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/workflow", "/run sandbox_info {}", "/unknown"]:
         assert handle_command(agent, line) is True
     assert handle_command(agent, "/exit") is False
     output = capsys.readouterr().out
@@ -325,6 +331,24 @@ def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, t
     assert any("Evolution audit" in m.text for m in app.messages)
     app._handle_command("/evolve trace")
     assert any("Evolution analysis: trace" in m.text for m in app.messages)
+    app._handle_command("/model")
+    assert any("Current model" in m.text for m in app.messages)
+    app._handle_command("/model tui-test-model")
+    assert app.agent.config.model == "tui-test-model"
+    app.input_text = "/mo"
+    app._complete_command()
+    assert app.input_text == "/model "
+    run_id = app.agent.tracer.start("tui context")
+    app.agent.tracer.event("prompt", {"message_count": 1})
+    app.agent.tracer.end("ok")
+    app._handle_command("/trace context latest")
+    assert any("Trace context" in m.text for m in app.messages)
+    app._handle_command(f"/trace context {run_id}")
+    assert any("message_count" in m.text for m in app.messages)
+    app._handle_key(18)
+    assert any(run_id in m.text for m in app.messages)
+    app._handle_key(24)
+    assert any("Trace context" in m.text for m in app.messages)
     app.queue.put(("tool_result", ("sandbox_info", True, "ok")))
     app.queue.put(("system", "system msg"))
     app.queue.put(("error", "bad"))

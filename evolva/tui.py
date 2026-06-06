@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import curses
 import json
+import os
 import shlex
 import textwrap
 import threading
@@ -20,13 +21,16 @@ TUI keys:
   Enter          Send message or command
   Ctrl+L         Clear screen messages
   Ctrl+T         Toggle tool log panel
+  Ctrl+R         Show recent traces
+  Ctrl+X         Show latest trace context events
+  F2             Prepare /model command
   PgUp/PgDn      Scroll chat
   Up/Down        Navigate input history
   Esc            Cancel current input line
   /exit          Quit
 
 Commands:
-  /help, /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace, /policy, /mcp, /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /run <tool> <json>
+  /help, /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp, /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /run <tool> <json>
 """.strip()
 
 
@@ -152,6 +156,16 @@ class EvolvaTUI:
             self.show_tools = not self.show_tools
             self.status = "Tool panel " + ("on" if self.show_tools else "off")
             return None
+        if ch == 18:  # Ctrl+R
+            self._show_recent_traces()
+            return None
+        if ch == 24:  # Ctrl+X
+            self._show_latest_trace_context()
+            return None
+        if ch == curses.KEY_F2:
+            self.input_text = "/model "
+            self.status = "Type a model name, then Enter. Use /model to view current model."
+            return None
         if ch == 10:  # unreachable due Enter branch, kept for clarity
             return None
         if ch == 27:  # Esc
@@ -195,7 +209,7 @@ class EvolvaTUI:
         return None
 
     def _complete_command(self) -> None:
-        commands = ["/help", "/tools", "/skills", "/memory", "/context", "/todo", "/agents", "/trace", "/policy", "/mcp", "/image", "/evolve", "/run", "/exit"]
+        commands = ["/help", "/tools", "/skills", "/memory", "/context", "/todo", "/agents", "/trace", "/model", "/policy", "/repo", "/mcp", "/image", "/evolve", "/run", "/exit"]
         matches = [c for c in commands if c.startswith(self.input_text)]
         if len(matches) == 1:
             self.input_text = matches[0] + (" " if matches[0] not in {"/help", "/tools", "/skills", "/exit"} else "")
@@ -270,15 +284,31 @@ class EvolvaTUI:
             elif line.startswith("/trace"):
                 rest = line.removeprefix("/trace").strip()
                 if rest in {"", "list"}:
-                    rows = self.agent.tracer.list_runs()
-                    body = "\n".join(f"- {r['run_id']} status={r['status']} duration={r['duration_ms']}ms input={r['user_input']}" for r in rows) or "No traces"
-                    self._add_system(body)
+                    self._show_recent_traces()
                 elif rest.startswith("show "):
                     self._add_system(self.agent.tracer.render(rest.removeprefix("show ").strip()))
+                elif rest.startswith("context "):
+                    run_id = rest.removeprefix("context ").strip()
+                    if run_id in {"", "latest"}:
+                        self._show_latest_trace_context()
+                    else:
+                        self._add_system(self.agent.tracer.render_context(run_id))
                 else:
-                    self._add_system("Usage: /trace list | /trace show <run_id>")
+                    self._add_system("Usage: /trace list | /trace show <run_id> | /trace context <run_id|latest>")
+            elif line.startswith("/model"):
+                self._handle_model_command(line.removeprefix("/model").strip())
             elif line == "/policy":
                 self._add_system(self.agent.policy.as_tool_result().output)
+            elif line.startswith("/repo"):
+                rest = line.removeprefix("/repo").strip()
+                if rest in {"", "build"}:
+                    result = self.agent._call_tool("repo_index_build", {})
+                elif rest.startswith("search "):
+                    result = self.agent._call_tool("repo_index_search", {"query": rest.removeprefix("search ").strip()})
+                else:
+                    self._add_system("Usage: /repo build | /repo search <query>")
+                    return
+                self._add_system(result.output)
             elif line.startswith("/mcp"):
                 rest = line.removeprefix("/mcp").strip()
                 if not rest:
@@ -341,6 +371,44 @@ class EvolvaTUI:
                 self._add_system("Unknown command. Use /help.")
         except Exception as exc:
             self._add_error(str(exc))
+
+    def _handle_model_command(self, value: str) -> None:
+        if not value:
+            choices = ", ".join(self._model_choices()) or "set EVOLVA_MODEL_CHOICES=model-a,model-b"
+            self._add_system(f"Current model: {self.agent.config.model}\nAvailable shortcuts: {choices}\nSwitch with /model <name> or F2.")
+            return
+        if value in {"next", "cycle"}:
+            value = self._next_model()
+        switched = self.agent.set_model(value)
+        self.status = f"Model switched to {switched}"
+        self._add_system(f"Switched model: {switched}")
+
+    def _model_choices(self) -> list[str]:
+        raw = os.getenv("EVOLVA_MODEL_CHOICES", "")
+        choices = [item.strip() for item in raw.split(",") if item.strip()]
+        if self.agent.config.model not in choices:
+            choices.insert(0, self.agent.config.model)
+        return list(dict.fromkeys(choices))
+
+    def _next_model(self) -> str:
+        choices = self._model_choices()
+        if len(choices) <= 1:
+            return self.agent.config.model
+        current = self.agent.config.model
+        idx = choices.index(current) if current in choices else -1
+        return choices[(idx + 1) % len(choices)]
+
+    def _show_recent_traces(self) -> None:
+        rows = self.agent.tracer.list_runs()
+        body = "\n".join(f"- {r['run_id']} status={r['status']} duration={r['duration_ms']}ms input={r['user_input']}" for r in rows) or "No traces"
+        self._add_system(body)
+
+    def _show_latest_trace_context(self) -> None:
+        rows = self.agent.tracer.list_runs(limit=1)
+        if not rows:
+            self._add_system("No traces")
+            return
+        self._add_system(self.agent.tracer.render_context(rows[0]["run_id"]))
 
     def _worker_run_tool(self, line: str) -> None:
         try:
@@ -430,7 +498,7 @@ class EvolvaTUI:
 
     def _draw_title(self, y: int, w: int) -> None:
         model = self.agent.config.model if self.agent.llm.available else "rule-mode"
-        title = f" Evolva TUI | model={model} | Ctrl+T tools | PgUp/PgDn scroll | /help "
+        title = f" Evolva TUI | model={model} | F2 model | Ctrl+R traces | Ctrl+X ctx | Ctrl+T tools | /help "
         self.stdscr.attron(curses.color_pair(3) | curses.A_BOLD)
         self.stdscr.addnstr(y, 0, title.ljust(w), w - 1)
         self.stdscr.attroff(curses.color_pair(3) | curses.A_BOLD)
@@ -478,7 +546,7 @@ class EvolvaTUI:
         display = self.input_text[-width:]
         self.stdscr.addnstr(y, len(prompt), display.ljust(width), width)
         self.stdscr.move(y, min(w - 2, len(prompt) + len(display)))
-        hint = "Enter send | Tab complete | Esc clear | Ctrl+L clear chat"
+        hint = "Enter send | Tab complete | F2 model | Ctrl+R traces | Ctrl+X trace ctx | Esc clear"
         self.stdscr.addnstr(y + 1, 0, hint.ljust(w), w - 1, curses.color_pair(3))
 
     def _wrap(self, text: str, width: int) -> list[str]:

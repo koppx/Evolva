@@ -30,6 +30,8 @@ Commands:
   /agents              List role agents
   /trace list          List recent traces
   /trace show <run>    Show a trace
+  /trace context <run> Show trace context/prompt events
+  /model [name]        Show or switch model for subsequent turns
   /policy              Show guardrail policy
   /repo build          Build local repository index
   /repo search <query> Search symbols, references, and code chunks
@@ -109,8 +111,17 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
             print("\n".join(f"- {r['run_id']} status={r['status']} duration={r['duration_ms']}ms input={r['user_input']}" for r in rows) or "No traces")
         elif rest.startswith("show "):
             print(agent.tracer.render(rest.removeprefix("show ").strip()))
+        elif rest.startswith("context "):
+            print(agent.tracer.render_context(rest.removeprefix("context ").strip()))
         else:
-            print("Usage: /trace list | /trace show <run_id>")
+            print("Usage: /trace list | /trace show <run_id> | /trace context <run_id>")
+        return True
+    if line.startswith("/model"):
+        name = line.removeprefix("/model").strip()
+        if not name:
+            print(f"Current model: {agent.config.model}")
+        else:
+            print(f"Switched model: {agent.set_model(name)}")
         return True
     if line == "/policy":
         print(agent.policy.as_tool_result().output)
@@ -260,6 +271,9 @@ def trace_cmd(args: argparse.Namespace) -> int:
     if args.trace_cmd == "show":
         print(agent.tracer.render(args.run_id))
         return 0
+    if args.trace_cmd == "context":
+        print(agent.tracer.render_context(args.run_id))
+        return 0
     if args.trace_cmd == "replay":
         prompt = agent.tracer.replay_prompt(args.run_id)
         result = agent.chat(prompt)
@@ -373,6 +387,9 @@ def build_parser() -> argparse.ArgumentParser:
     trace_show = trace_sub.add_parser("show", help="Show one trace")
     trace_show.add_argument("run_id")
     trace_show.set_defaults(func=trace_cmd)
+    trace_context = trace_sub.add_parser("context", help="Show prompt/context events for one trace")
+    trace_context.add_argument("run_id")
+    trace_context.set_defaults(func=trace_cmd)
     trace_replay = trace_sub.add_parser("replay", help="Replay a trace user prompt")
     trace_replay.add_argument("run_id")
     trace_replay.set_defaults(func=trace_cmd)

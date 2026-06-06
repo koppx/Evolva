@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from evolva.agent.context import ContextStore
@@ -82,6 +82,17 @@ class EvolvaAgent:
         self.assume_yes = assume_yes
         self.confirmer = confirmer
         self.history: list[dict[str, Any]] = []
+
+    def set_model(self, model: str) -> str:
+        """Switch the active OpenAI-compatible model for subsequent turns."""
+        model = model.strip()
+        if not model:
+            raise ValueError("model name cannot be empty")
+        self.config = replace(self.config, model=model)
+        self.llm = OpenAICompatibleLLM(self.config)
+        self.coordinator.llm = self.llm
+        self.context.add("decision", f"Switched model to {model}", role="system", meta={"model": model})
+        return model
 
     def chat(self, user_message: str, image_sources: list[str] | None = None) -> TurnResult:
         self.tracer.start(

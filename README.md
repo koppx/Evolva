@@ -183,6 +183,8 @@ python3 -m evolva.cli evolve eval --apply
 /agents                   列出多 agent 角色
 /trace list               查看最近 trace
 /trace show <run_id>      查看单次 trace
+/trace context <run_id>   查看 trace 中的上下文/Prompt 事件
+/model [name]              查看或切换当前模型
 /policy                   查看 guardrail 策略
 /repo build               构建本地仓库索引
 /repo search <query>      搜索代码符号、引用和片段
@@ -223,6 +225,17 @@ python3 -m evolva.cli evolve eval --apply
 <p align="center">
   <img src="assets/tui-mockup.svg" alt="Evolva TUI mockup" width="100%" />
 </p>
+
+TUI 支持常见工作台快捷键：
+
+| 快捷键 | 作用 |
+| --- | --- |
+| `F2` | 准备 `/model` 命令，快速切换模型 |
+| `Ctrl+R` | 查看最近 Trace |
+| `Ctrl+X` | 查看最新 Trace 的上下文 / Prompt 事件 |
+| `Ctrl+T` | 显示 / 隐藏工具日志面板 |
+| `PgUp` / `PgDn` | 滚动聊天窗口 |
+| `Tab` | 补全常用 Slash Command |
 
 ## Workflow / MCP / Memory 闭环
 

@@ -101,9 +101,11 @@ def test_policy_blocks_dangerous_shell(tmp_path):
 def test_trace_recorder_roundtrip(tmp_path):
     traces = TraceRecorder(tmp_path / "traces")
     run_id = traces.start("hello")
+    traces.event("prompt", {"message_count": 2, "system_chars": 10})
     traces.event("tool_call", {"tool": "noop", "ok": True})
     traces.end("done")
     assert run_id in traces.render(run_id)
+    assert "message_count" in traces.render_context(run_id)
     assert traces.replay_prompt(run_id) == "hello"
 
 
