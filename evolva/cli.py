@@ -31,6 +31,8 @@ Commands:
   /trace list          List recent traces
   /trace show <run>    Show a trace
   /policy              Show guardrail policy
+  /repo build          Build local repository index
+  /repo search <query> Search symbols, references, and code chunks
   /mcp                 List MCP servers
   /mcp tools [server]  List MCP tools
   /image <path|url> [text]
@@ -112,6 +114,17 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
         return True
     if line == "/policy":
         print(agent.policy.as_tool_result().output)
+        return True
+    if line.startswith("/repo"):
+        rest = line.removeprefix("/repo").strip()
+        if rest in {"", "build"}:
+            result = agent._call_tool("repo_index_build", {})
+        elif rest.startswith("search "):
+            result = agent._call_tool("repo_index_search", {"query": rest.removeprefix("search ").strip()})
+        else:
+            print("Usage: /repo build | /repo search <query>")
+            return True
+        print(result.output)
         return True
     if line.startswith("/mcp"):
         rest = line.removeprefix("/mcp").strip()

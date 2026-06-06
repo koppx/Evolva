@@ -20,6 +20,7 @@ class AgentConfig:
     eval_results_dir: Path = ROOT / "evolva" / "eval_results"
     workflows_dir: Path = ROOT / "evolva" / "workflows"
     mcp_config_file: Path = ROOT / "evolva" / "mcp" / "servers.json"
+    repo_index_file: Path = ROOT / "evolva" / "repo_index" / "index.json"
     sandbox_allow_shell: bool = os.getenv("EVOLVA_SANDBOX_ALLOW_SHELL", "1") != "0"
     tracing_enabled: bool = os.getenv("EVOLVA_TRACING", "1") != "0"
     model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -38,3 +39,4 @@ class AgentConfig:
         self.eval_results_dir.mkdir(parents=True, exist_ok=True)
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
         self.mcp_config_file.parent.mkdir(parents=True, exist_ok=True)
+        self.repo_index_file.parent.mkdir(parents=True, exist_ok=True)

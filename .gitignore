@@ -19,6 +19,7 @@ evolva/todo/
 evolva/traces/
 evolva/eval_results/
 evolva/optimization_reports/
+evolva/repo_index/
 evolva/workflows/
 evolva/workspace/
 evolva/mcp/servers.json

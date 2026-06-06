@@ -45,18 +45,26 @@ class EvalHarness:
 
     def run_task(self, task: dict[str, Any]) -> EvalResult:
         started = time.time()
-        result = self.agent.chat(str(task["input"]))
+        if "tool" in task:
+            tool_name = str(task["tool"])
+            tool_result = self.agent._call_tool(tool_name, dict(task.get("args", {})))
+            answer = tool_result.output
+            tool_logs = [f"TOOL {tool_name} ok={tool_result.ok}\n{tool_result.output}"]
+        else:
+            result = self.agent.chat(str(task["input"]))
+            answer = result.answer
+            tool_logs = result.tool_logs
         duration_ms = int((time.time() - started) * 1000)
-        checks = self.score(task, result.answer, result.tool_logs, duration_ms=duration_ms)
-        passed = all(checks.values()) if checks else bool(result.answer.strip())
+        checks = self.score(task, answer, tool_logs, duration_ms=duration_ms)
+        passed = all(checks.values()) if checks else bool(answer.strip())
         score = sum(1 for ok in checks.values() if ok) / max(1, len(checks))
         return EvalResult(
             id=str(task.get("id", "unnamed")),
             passed=passed,
             score=score,
             checks=checks,
-            answer=result.answer,
-            tool_logs=result.tool_logs,
+            answer=answer,
+            tool_logs=tool_logs,
             duration_ms=duration_ms,
         )
 

@@ -25,5 +25,6 @@ def temp_config(tmp_path: Path) -> AgentConfig:
         eval_results_dir=base / "eval_results",
         workflows_dir=base / "workflows",
         mcp_config_file=base / "mcp" / "servers.json",
+        repo_index_file=base / "repo_index" / "index.json",
         api_key=None,
     )

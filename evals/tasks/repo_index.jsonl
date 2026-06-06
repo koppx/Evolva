@@ -1,0 +1,2 @@
+{"id":"repo_index_build_001","tool":"repo_index_build","args":{"max_files":1000},"expected_contains":["Built repo index"],"scorers":["no_tool_error"]}
+{"id":"repo_index_search_self_evolution_001","tool":"repo_index_search","args":{"query":"SelfEvolutionEngine evolve lesson fingerprint","limit":5},"expected_contains":["SelfEvolutionEngine","evolva/agent/evolution.py"],"scorers":["no_tool_error"]}

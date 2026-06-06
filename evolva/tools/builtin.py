@@ -4,12 +4,14 @@ import json
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from dataclasses import asdict
 
 from evolva.agent.context import ContextStore
 from evolva.agent.memory import MemoryStore
 from evolva.agent.mcp import MCPManager, render_mcp_result
 from evolva.agent.multi_agent import MultiAgentCoordinator
 from evolva.agent.policy import PolicyEngine
+from evolva.agent.repo_index import RepoIndex
 from evolva.agent.sandbox import Sandbox
 from evolva.agent.skills import SkillStore
 from evolva.agent.todo import TodoStore
@@ -25,6 +27,7 @@ def build_registry(
     coordinator: MultiAgentCoordinator | None = None,
     policy: PolicyEngine | None = None,
     mcp: MCPManager | None = None,
+    repo_index_file: Path | None = None,
 ) -> ToolRegistry:
     reg = ToolRegistry()
 
@@ -143,6 +146,24 @@ def build_registry(
         decision = policy.check_tool(tool_name, args or {})
         return ToolResult(True, json.dumps(decision.to_dict(), ensure_ascii=False, indent=2), decision.to_dict())
 
+    def repo_index_build(max_files: int = 1000) -> ToolResult:
+        index = RepoIndex(sandbox.root, repo_index_file)
+        snapshot = index.build(max_files=int(max_files))
+        output = f"Built repo index: {len(snapshot.chunks)} chunks backend={snapshot.backend}"
+        context.add("artifact", output, meta={"index_file": str(index.index_file), "chunks": len(snapshot.chunks)})
+        return ToolResult(True, output, asdict(snapshot))
+
+    def repo_index_search(query: str, limit: int = 8) -> ToolResult:
+        index = RepoIndex(sandbox.root, repo_index_file)
+        rows = index.search(query, limit=int(limit))
+        lines = []
+        for row in rows:
+            excerpt = " ".join(row.text.strip().split())[:240]
+            lines.append(f"- {row.path}:{row.start_line}-{row.end_line} {row.kind} {row.symbol} score={row.score:.3f}\n  {excerpt}")
+        output = "\n".join(lines) or "No repo index matches"
+        context.add("artifact", f"Repo index search `{query}` returned {len(rows)} chunks", meta={"query": query, "limit": limit})
+        return ToolResult(True, output, [asdict(row) for row in rows])
+
     def mcp_servers() -> ToolResult:
         if mcp is None:
             return ToolResult(False, "MCP manager is not configured")
@@ -200,6 +221,8 @@ def build_registry(
     reg.register(Tool("sandbox_info", "Show sandbox root, workspace, and policy", {}, sandbox_info))
     reg.register(Tool("policy_info", "Show guardrail policy configuration", {}, policy_info))
     reg.register(Tool("policy_check", "Preview whether policy allows a tool call", {"tool_name": "str", "args": "dict"}, policy_check))
+    reg.register(Tool("repo_index_build", "Build a local semantic repository index with symbol chunks", {"max_files": "int"}, repo_index_build))
+    reg.register(Tool("repo_index_search", "Search repository symbols, references, paths, and code chunks", {"query": "str", "limit": "int"}, repo_index_search))
     reg.register(Tool("mcp_servers", "List configured MCP servers", {}, mcp_servers))
     reg.register(Tool("mcp_tools", "List tools from configured MCP servers", {"server": "str"}, mcp_tools))
     reg.register(Tool("mcp_call", "Call an MCP tool via stdio JSON-RPC", {"server": "str", "tool": "str", "arguments": "dict"}, mcp_call, needs_confirmation=True))

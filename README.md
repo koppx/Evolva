@@ -71,6 +71,7 @@ python3 -m evolva.cli ask "描述这张图" --image evolva/workspace/example.png
 | **LangGraph Runtime** | 显式 `StateGraph` 节点：`prepare -> llm -> tool -> observe -> persist -> auto_evolve` | `evolva/agent/langgraph_runtime.py` |
 | **CLI / TUI** | 交互对话、单次 ask、curses TUI | `python3 -m evolva.cli chat` / `tui` |
 | **Tools** | 文件、Shell、Python、Web、Todo、Memory、Context、Policy、MCP、多 Agent 委派 | `/tools` / `/run` |
+| **Repo Index** | 本地语义仓库索引，按符号、引用、路径和代码片段检索 | `/repo build` / `/repo search` |
 | **Memory / Skills** | 长期记忆、偏好、经验教训、Markdown playbook | `/memory` / `/skills` |
 | **MCP** | stdio MCP client，连接外部工具服务 | `python3 -m evolva.cli mcp ...` |
 | **Workflow** | JSON 工作流编排 role agent、agent call、tool node | `python3 -m evolva.cli workflow ...` |
@@ -137,6 +138,10 @@ python3 -m evolva.cli eval evals/tasks/smoke.jsonl --yes
 # Workflow
 python3 -m evolva.cli workflow path/to/workflow.json --yes
 
+# Repo Index
+# 交互模式下：/repo build，然后 /repo search SelfEvolutionEngine evolve
+python3 -m evolva.cli chat
+
 # MCP
 python3 -m evolva.cli mcp servers
 python3 -m evolva.cli mcp tools filesystem
@@ -167,6 +172,8 @@ python3 -m evolva.cli evolve eval --apply
 /trace list               查看最近 trace
 /trace show <run_id>      查看单次 trace
 /policy                   查看 guardrail 策略
+/repo build               构建本地仓库索引
+/repo search <query>      搜索代码符号、引用和片段
 /mcp                      查看 MCP servers
 /mcp tools [server]       查看 MCP tools
 /image <path|url> [text]  对图片提问

@@ -66,7 +66,17 @@ class EvolvaAgent:
         self.mcp = MCPManager(self.config.mcp_config_file, root=self.config.root)
         self.llm = OpenAICompatibleLLM(self.config)
         self.coordinator = MultiAgentCoordinator(self.llm, self.memory, self.skills, self.todos)
-        self.tools: ToolRegistry = build_registry(self.sandbox, self.memory, self.skills, self.context, self.todos, self.coordinator, self.policy, self.mcp)
+        self.tools: ToolRegistry = build_registry(
+            self.sandbox,
+            self.memory,
+            self.skills,
+            self.context,
+            self.todos,
+            self.coordinator,
+            self.policy,
+            self.mcp,
+            self.config.repo_index_file,
+        )
         self.evolution = SelfEvolutionEngine(self.memory, self.skills)
         self.graph_runtime = EvolvaLangGraphRuntime(self)
         self.assume_yes = assume_yes
