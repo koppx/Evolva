@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/evolva-hero.svg" alt="Evolva - Local Self-Evolving Agent Harness" width="100%" />
+  <img src="assets/evolva-poster.jpeg" alt="Evolva poster - Local Self-Evolving Agent Harness" width="100%" />
 </p>
 
 <h1 align="center">Evolva</h1>
@@ -238,7 +238,7 @@ evolva/
   eval/harness.py            JSONL eval runner
   workflow/engine.py         workflow DAG engine
 assets/
-  evolva-hero.svg
+  evolva-poster.jpeg        README hero poster
   architecture.svg
   tui-mockup.svg
   workflow-mcp-memory.svg
