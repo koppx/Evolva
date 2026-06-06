@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Production-grade · Local-first · Self-Evolving Agent Harness</strong><br />
-  面向真实工程场景的 Agent 运行底座：把仓库理解、工具执行、Trace 回放、Eval 回归、Guardrails 与自我进化收敛到一个可审计的闭环。
+  面向真实工程场景的 Agent 运行底座：把仓库理解、工具执行、Trace 回放、Eval 基准、Guardrails 与自我进化收敛到一个可审计的闭环。
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 
 ## 为什么是 Evolva
 
-Evolva 不是一个 chatbot 外壳，而是一个面向工程化 Agent 的 **local-first harness**。它关注的不是“单次回答有多聪明”，而是 Agent 在真实仓库中如何稳定地理解上下文、调用工具、留下证据、接受评测，并把失败转化为下一次执行的能力增益。
+Evolva 不是停留在对话层的 Agent Shell，而是一个面向工程化 Agent 的 **local-first harness**。它关注的不是“单次回答有多聪明”，而是 Agent 在真实仓库中如何稳定理解上下文、调用工具、留下证据、通过评测，并把失败转化为下一次执行的能力增益。
 
 它的核心闭环是：
 
@@ -33,16 +33,16 @@ Evolva 不是一个 chatbot 外壳，而是一个面向工程化 Agent 的 **loc
 Plan -> Act -> Observe -> Evaluate -> Evolve
 ```
 
-这意味着 Evolva 每次执行都不只是产生结果，还会留下可追踪的运行记录、可复现的 Eval 依据和可沉淀的经验资产。它更像一个开源的 Agent 操作系统内核：透明、可扩展、可审计，并且默认服务于长期演进。
+这意味着 Evolva 每次执行都不只是产生结果，还会留下可追踪的运行记录、可复现的 Eval 依据和可沉淀的经验资产。它更像一套开放的 Agent 控制平面：透明、可扩展、可审计，并且默认服务于长期演进。
 
 ## 定位
 
-Evolva 的定位是一个可组合、可观测、可持续演进的 Agent Harness。它把工程 Agent 的关键能力拆成清晰模块，让开发者可以在本地理解、扩展和验证每一次 Agent 行为：
+Evolva 的定位是一个可组合、可观测、可持续演进的 Agent Harness。它把工程 Agent 的关键能力拆成清晰模块，让开发者可以在本地理解、扩展和验证每一次推理与执行：
 
 - **Repo-aware**：通过仓库索引、上下文、记忆和 Skill 建立可检索的工程上下文。
 - **Traceable**：每次工具调用、策略决策、失败信息和最终输出都进入 Trace，便于回放与审计。
 - **Evaluable**：JSONL Eval Harness 把 Agent 行为变成可回归的测试资产。
-- **Self-improving**：从反馈、Trace pattern 和 Eval failure 中提炼 lesson，再进入长期记忆与 Skill。
+- **Self-improving**：从反馈、Trace 模式和 Eval 失败样本中提炼 lesson，再进入长期记忆与 Skill。
 - **Local-first**：默认在本地文件系统和沙箱中运行，核心能力不绑定云服务。
 
 ## 快速开始
@@ -143,6 +143,11 @@ python3 -m evolva.cli ask "分析当前仓库并给出可验证的优化计划"
 python3 -m evolva.cli trace list
 python3 -m evolva.cli trace show <run_id>
 python3 -m evolva.cli trace replay <run_id>
+python3 -m evolva.cli trace context <run_id>
+
+# Model
+# 交互模式下：/model 查看当前模型，/model <name> 切换模型
+python3 -m evolva.cli chat
 
 # Eval
 python3 -m evolva.cli eval evals/tasks/smoke.jsonl --yes

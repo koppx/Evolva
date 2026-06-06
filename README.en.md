@@ -5,8 +5,8 @@
 <h1 align="center">Evolva</h1>
 
 <p align="center">
-  <strong>Local-first Self-Evolving Agent Harness</strong><br />
-  A compact project that exposes agent runtime, tools, memory, evals, tracing, safety, and evolution loops.
+  <strong>Production-oriented · Local-first · Self-Evolving Agent Harness</strong><br />
+  A local agent runtime foundation that connects repository context, tool execution, Trace/Replay, Eval baselines, Guardrails, and Self-Evolution into one auditable loop.
 </p>
 
 <p align="center">
@@ -25,13 +25,13 @@
 
 ## Why Evolva
 
-Many agent demos stop at chatbot behavior. Evolva is different: it keeps the system small while exposing the engineering pieces that make an agent inspectable and extensible.
+Evolva is not a chatbot wrapper. It is a **local-first harness** for engineering agents that need to understand repository context, execute tools safely, preserve evidence, pass evals, and turn failures into reusable capability assets.
 
 ```text
 Plan -> Act -> Observe -> Evaluate -> Evolve
 ```
 
-Use it as a learning harness, a local agent playground, or a base for your own agent framework.
+Every run is designed to leave behind inspectable traces, reproducible eval signals, and reusable lessons. Evolva is a modular agent control plane: transparent, extensible, auditable, and built for long-term improvement.
 
 ## Quick Start
 
@@ -55,7 +55,17 @@ python3 -m evolva.cli ask "Remember: run tests after editing Python"
 python3 -m evolva.cli ask "Describe this image" --image evolva/workspace/example.png
 ```
 
-Without `OPENAI_API_KEY`, Evolva falls back to a limited local rule-based mode. Local tools, memory, skills, todo, traces, workflows, and evals remain available.
+Without `OPENAI_API_KEY`, Evolva falls back to a limited local rule-based mode. Local tools, memory, skills, todo, traces, workflows, and evals remain available for offline testing and extension.
+
+## Positioning
+
+Evolva is a composable, observable, and continuously improving Agent Harness. It decomposes engineering-agent behavior into modules that can be inspected, extended, and validated locally:
+
+- **Repo-aware**: builds searchable engineering context from repository index, memory, context, todo, and skills.
+- **Traceable**: persists tool calls, policy decisions, failures, context events, and final outputs for replay and audit.
+- **Evaluable**: turns agent behavior into JSONL regression assets through Eval Harness.
+- **Self-improving**: distills feedback, trace patterns, and eval failures into long-term memory and Markdown skills.
+- **Local-first**: runs against local files and sandboxed execution by default, without mandatory cloud dependencies.
 
 ## Capability Map
 
@@ -64,6 +74,7 @@ Without `OPENAI_API_KEY`, Evolva falls back to a limited local rule-based mode. 
 | **LangGraph Runtime** | Explicit `StateGraph` nodes: `prepare -> llm -> tool -> observe -> persist -> auto_evolve` | `evolva/agent/langgraph_runtime.py` |
 | **CLI / TUI** | Interactive chat, one-shot ask, curses TUI | `python3 -m evolva.cli chat` / `tui` |
 | **Tools** | File, shell, Python, web, todo, memory, context, policy, MCP, delegation | `/tools` / `/run` |
+| **Repo Index** | Local semantic repository index for symbols, references, paths, and code chunks | `/repo build` / `/repo search` |
 | **Memory / Skills** | Long-term facts, preferences, lessons, Markdown playbooks | `/memory` / `/skills` |
 | **MCP** | stdio MCP client for external tool servers | `python3 -m evolva.cli mcp ...` |
 | **Workflow** | JSON workflow specs with role agents, agent calls, and tool nodes | `python3 -m evolva.cli workflow ...` |
@@ -80,7 +91,7 @@ Without `OPENAI_API_KEY`, Evolva falls back to a limited local rule-based mode. 
 
 Evolva is organized into three lanes:
 
-1. **Reasoning & State**: CLI / TUI enters Evolva Core. The LangGraph runtime manages state and assembles Memory, Skills, Todo, and Context.
+1. **Reasoning & State**: CLI / TUI enters Evolva Core. The LangGraph runtime manages state and assembles Memory, Skills, Todo, Context, and Repo Index.
 2. **Guarded Execution**: tool calls pass through Policy and Sandbox before reaching files, shell, Python, web, MCP, workflows, and sub agents.
 3. **Feedback Loop**: Trace records behavior, Eval checks regressions, and Evolution distills feedback into long-term memory and reusable skills.
 
@@ -117,18 +128,27 @@ The resulting lessons include **category / confidence / evidence / fingerprint**
 # Chat / TUI / Ask
 python3 -m evolva.cli chat
 python3 -m evolva.cli tui
-python3 -m evolva.cli ask "Plan a local agent demo"
+python3 -m evolva.cli ask "Analyze this repository and produce a verifiable improvement plan"
 
 # Trace
 python3 -m evolva.cli trace list
 python3 -m evolva.cli trace show <run_id>
 python3 -m evolva.cli trace replay <run_id>
+python3 -m evolva.cli trace context <run_id>
+
+# Model
+# In interactive mode: /model shows the current model, /model <name> switches it
+python3 -m evolva.cli chat
 
 # Eval
 python3 -m evolva.cli eval evals/tasks/smoke.jsonl --yes
 
 # Workflow
 python3 -m evolva.cli workflow path/to/workflow.json --yes
+
+# Repo Index
+# In interactive mode: /repo build, then /repo search SelfEvolutionEngine evolve
+python3 -m evolva.cli chat
 
 # MCP
 python3 -m evolva.cli mcp servers
@@ -159,7 +179,11 @@ python3 -m evolva.cli evolve eval --apply
 /agents                   List role agents
 /trace list               List recent traces
 /trace show <run_id>      Show one trace
+/trace context <run_id>   Show context / prompt events from a trace
+/model [name]             Show or switch the active model
 /policy                   Show guardrail policy
+/repo build               Build the local repository index
+/repo search <query>      Search code symbols, references, and chunks
 /mcp                      List MCP servers
 /mcp tools [server]       List MCP tools
 /image <path|url> [text]  Ask with an image
@@ -175,11 +199,11 @@ python3 -m evolva.cli evolve eval --apply
 
 ```json
 {
-  "id": "demo_workflow",
+  "id": "verified_python_task",
   "nodes": [
-    {"id": "plan", "type": "role", "role": "planner", "task": "Plan a Python demo"},
-    {"id": "write", "type": "tool", "tool": "write_file", "args": {"path": "evolva/workspace/demo.py", "content": "print('hello from Evolva')\n"}},
-    {"id": "run", "type": "tool", "tool": "shell", "args": {"command": "python3 evolva/workspace/demo.py"}}
+    {"id": "plan", "type": "role", "role": "planner", "task": "Plan a verifiable Python engineering task"},
+    {"id": "write", "type": "tool", "tool": "write_file", "args": {"path": "evolva/workspace/verified_task.py", "content": "print('hello from Evolva')\n"}},
+    {"id": "run", "type": "tool", "tool": "shell", "args": {"command": "python3 evolva/workspace/verified_task.py"}}
   ]
 }
 ```
@@ -197,6 +221,17 @@ Supported checks include `expected_contains`, `forbidden_contains`, `expected_re
 <p align="center">
   <img src="assets/tui-mockup.svg" alt="Evolva TUI mockup" width="100%" />
 </p>
+
+TUI supports common workstation shortcuts:
+
+| Shortcut | Action |
+| --- | --- |
+| `F2` | Prepare `/model` for quick model switching |
+| `Ctrl+R` | Show recent traces |
+| `Ctrl+X` | Show context / prompt events from the latest trace |
+| `Ctrl+T` | Show / hide tool logs |
+| `PgUp` / `PgDn` | Scroll chat history |
+| `Tab` | Complete common slash commands |
 
 ## Workflow / MCP / Memory
 
@@ -249,6 +284,6 @@ assets/
 ---
 
 <p align="center">
-  <strong>Evolva</strong> · Local, inspectable, self-evolving agents.<br />
-  If this project helps you, star <strong>koppx/Evolva</strong>.
+  <strong>Evolva</strong> · Local-first, inspectable, self-evolving Agent Harness.<br />
+  If you are building evaluable, replayable, self-improving agent systems, star <strong>koppx/Evolva</strong>.
 </p>
