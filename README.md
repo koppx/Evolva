@@ -37,7 +37,7 @@ Plan -> Act -> Observe -> Evaluate -> Evolve
 
 ## 定位
 
-Evolva 面向 Claude Code / Codex CLI 这类工程化 Agent 体验，但不试图用黑盒方式复刻任何闭源实现。它选择把关键运行机制开源出来：
+Evolva 的定位是一个可组合、可观测、可持续演进的 Agent Harness。它把工程 Agent 的关键能力拆成清晰模块，让开发者可以在本地理解、扩展和验证每一次 Agent 行为：
 
 - **Repo-aware**：通过仓库索引、上下文、记忆和 Skill 建立可检索的工程上下文。
 - **Traceable**：每次工具调用、策略决策、失败信息和最终输出都进入 Trace，便于回放与审计。
