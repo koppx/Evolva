@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/evolva-poster.jpeg" alt="Evolva poster - Local Self-Evolving Agent Harness" width="100%" />
+  <img src="assets/evolva-poster.jpeg" alt="Evolva poster - Local Self-Evolving Agent Harness" width="680" />
 </p>
 
 <h1 align="center">Evolva</h1>
