@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1440" width="1080" height="1440">
+<defs>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.35"/></filter>
+  <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 0.12"/></feComponentTransfer></filter>
+  <linearGradient id="gold" x1="0" x2="1"><stop offset="0" stop-color="#F5D982"/><stop offset="1" stop-color="#B47A26"/></linearGradient>
+  <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#151316"/><stop offset="1" stop-color="#050506"/></linearGradient>
+</defs>
+<rect width="1080" height="1440" fill="#12100D"/>
+<rect width="1080" height="1440" filter="url(#grain)" opacity="0.9"/>
+
+<polygon points="-76.3,37.4 30.4,34.6 121.3,45.2 199.1,50.3 293.3,47.6 389.5,35.3 497.3,61.8 581.5,40.0 694.6,66.1 692.8,71.3 707.1,83.7 702.9,117.4 677.2,136.2 683.1,186.4 678.5,202.9 695.0,220.4 691.7,234.3 674.1,264.4 696.5,297.4 588.3,303.1 498.3,292.8 415.6,307.2 300.8,302.7 215.9,313.5 128.3,292.4 42.3,286.3 -72.9,309.3 -82.5,274.6 -86.6,256.1 -60.5,227.6 -56.5,193.3 -63.0,178.4 -67.1,148.4 -57.8,141.0 -70.9,105.9 -85.8,82.3" fill="#EAD9B0" transform="rotate(-5 310.0 175.0)" filter="url(#shadow)" opacity="0.96"/>
+<polygon points="395.3,112.8 496.6,87.2 575.9,101.1 657.8,93.6 758.0,81.2 849.1,104.7 946.7,85.9 1051.1,108.4 1134.9,93.2 1151.8,134.8 1161.5,160.1 1142.0,170.0 1144.9,212.8 1166.5,212.4 1138.3,241.4 1140.4,276.5 1153.2,294.5 1132.1,326.1 1145.3,357.4 1071.3,361.9 960.6,359.2 871.3,338.9 784.4,365.1 688.5,365.7 576.1,351.4 470.7,359.8 374.2,339.4 379.5,316.8 384.2,286.9 372.0,264.4 375.7,246.1 372.9,238.5 394.1,186.3 381.1,167.5 385.1,133.4 402.6,138.8" fill="#F4E9C9" transform="rotate(7 770.0 225.0)" filter="url(#shadow)" opacity="0.96"/>
+<polygon points="-56.2,334.4 77.6,320.7 234.3,326.5 399.3,322.8 517.8,351.2 683.5,322.3 831.6,318.0 978.5,352.2 1138.1,342.1 1116.4,408.2 1113.0,500.8 1126.2,579.0 1118.9,637.0 1136.2,742.5 1137.7,814.0 1136.5,889.6 1115.2,959.6 1119.8,1020.0 1108.0,1107.1 968.8,1121.9 846.4,1113.1 698.2,1132.6 551.4,1110.1 377.4,1105.2 229.1,1104.4 97.0,1129.4 -42.7,1114.3 -49.5,1047.8 -69.9,964.8 -40.2,891.2 -46.0,802.2 -66.6,735.4 -61.0,657.8 -38.0,565.3 -58.6,507.1 -46.9,401.1" fill="#DBC08A" transform="rotate(-2 535.0 725.0)" filter="url(#shadow)" opacity="0.96"/>
+<polygon points="56.6,957.4 214.6,981.0 317.3,981.8 477.3,975.7 584.6,971.8 706.7,952.5 867.0,975.4 981.0,985.6 1107.6,983.4 1121.7,994.6 1101.1,1032.5 1100.7,1078.1 1101.3,1107.1 1096.7,1159.8 1104.7,1178.5 1113.0,1229.6 1107.1,1265.0 1110.1,1286.1 1110.8,1302.7 977.8,1308.6 832.1,1330.8 708.2,1319.0 598.1,1322.0 453.7,1320.7 332.0,1330.2 185.8,1322.2 60.9,1312.0 79.8,1285.3 72.2,1259.4 84.8,1213.0 74.1,1180.2 70.4,1151.9 68.3,1111.2 69.2,1090.9 77.2,1053.6 85.9,996.3" fill="#EFE1BD" transform="rotate(3 590.0 1145.0)" filter="url(#shadow)" opacity="0.96"/>
+<polygon points="97.4,372.7 219.8,340.5 302.4,352.7 411.7,344.6 522.9,361.8 662.6,370.9 748.7,363.6 880.2,340.7 1000.3,373.7 973.8,420.1 980.9,448.5 1004.6,509.3 971.5,540.3 985.6,583.6 972.8,629.7 993.9,664.8 987.2,728.6 965.7,771.3 990.0,825.5 856.3,844.4 774.0,843.9 635.4,815.6 521.6,836.2 419.6,810.2 314.4,841.5 219.0,815.3 81.0,841.8 97.8,786.0 78.6,713.3 102.5,681.0 77.9,654.5 100.4,602.1 78.3,557.2 77.7,510.5 93.2,442.6 97.1,419.1" fill="url(#ink)" filter="url(#shadow)"/>
+<rect x="60" y="285" width="290" height="45" fill="#D64B3B" opacity="0.88" transform="rotate(-8 205.0 307.5)" filter="url(#shadow)"/>
+<rect x="760" y="305" width="240" height="42" fill="#D6B03D" opacity="0.88" transform="rotate(10 880.0 326.0)" filter="url(#shadow)"/>
+<rect x="83" y="1110" width="300" height="38" fill="#40C7C8" opacity="0.88" transform="rotate(5 233.0 1129.0)" filter="url(#shadow)"/>
+<rect x="690" y="1020" width="300" height="44" fill="#B6E04E" opacity="0.88" transform="rotate(-6 840.0 1042.0)" filter="url(#shadow)"/>
+<rect x="190" y="205" width="180" height="32" fill="#D94AA7" opacity="0.88" transform="rotate(11 280.0 221.0)" filter="url(#shadow)"/>
+<text x="92" y="162" font-family="Arial Black, Impact, sans-serif" font-size="118" letter-spacing="-5" fill="#111">EVOLVA</text>
+<text x="94" y="238" font-family="Arial Black, Impact, sans-serif" font-size="52" fill="#8A5A18">AGENT HARNESS</text>
+<text x="100" y="307" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#1A1714">LOCAL-FIRST · TRACEABLE · SELF-EVOLVING</text>
+
+<line x1="770.0" y1="395" x2="880.0" y2="395" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="770.0" cy="395" r="8" fill="#55D5D0"/><circle cx="880.0" cy="395" r="8" fill="#55D5D0"/>
+<line x1="812.4" y1="412" x2="837.6" y2="412" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="812.4" cy="412" r="8" fill="#E7C868"/><circle cx="837.6" cy="412" r="8" fill="#E7C868"/>
+<line x1="837.4" y1="429" x2="812.6" y2="429" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="837.4" cy="429" r="8" fill="#55D5D0"/><circle cx="812.6" cy="429" r="8" fill="#55D5D0"/>
+<line x1="835.0" y1="446" x2="815.0" y2="446" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="835.0" cy="446" r="8" fill="#E7C868"/><circle cx="815.0" cy="446" r="8" fill="#E7C868"/>
+<line x1="806.1" y1="463" x2="843.9" y2="463" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="806.1" cy="463" r="8" fill="#55D5D0"/><circle cx="843.9" cy="463" r="8" fill="#55D5D0"/>
+<line x1="762.4" y1="480" x2="887.6" y2="480" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="762.4" cy="480" r="8" fill="#E7C868"/><circle cx="887.6" cy="480" r="8" fill="#E7C868"/>
+<line x1="721.9" y1="497" x2="928.1" y2="497" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="721.9" cy="497" r="8" fill="#55D5D0"/><circle cx="928.1" cy="497" r="8" fill="#55D5D0"/>
+<line x1="700.9" y1="514" x2="949.1" y2="514" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="700.9" cy="514" r="8" fill="#E7C868"/><circle cx="949.1" cy="514" r="8" fill="#E7C868"/>
+<line x1="708.2" y1="531" x2="941.8" y2="531" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="708.2" cy="531" r="8" fill="#55D5D0"/><circle cx="941.8" cy="531" r="8" fill="#55D5D0"/>
+<line x1="740.6" y1="548" x2="909.4" y2="548" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="740.6" cy="548" r="8" fill="#E7C868"/><circle cx="909.4" cy="548" r="8" fill="#E7C868"/>
+<line x1="785.1" y1="565" x2="864.9" y2="565" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="785.1" cy="565" r="8" fill="#55D5D0"/><circle cx="864.9" cy="565" r="8" fill="#55D5D0"/>
+<line x1="823.4" y1="582" x2="826.6" y2="582" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="823.4" cy="582" r="8" fill="#E7C868"/><circle cx="826.6" cy="582" r="8" fill="#E7C868"/>
+<line x1="839.9" y1="599" x2="810.1" y2="599" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="839.9" cy="599" r="8" fill="#55D5D0"/><circle cx="810.1" cy="599" r="8" fill="#55D5D0"/>
+<line x1="827.9" y1="616" x2="822.1" y2="616" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="827.9" cy="616" r="8" fill="#E7C868"/><circle cx="822.1" cy="616" r="8" fill="#E7C868"/>
+<line x1="792.3" y1="633" x2="857.7" y2="633" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="792.3" cy="633" r="8" fill="#55D5D0"/><circle cx="857.7" cy="633" r="8" fill="#55D5D0"/>
+<line x1="747.6" y1="650" x2="902.4" y2="650" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="747.6" cy="650" r="8" fill="#E7C868"/><circle cx="902.4" cy="650" r="8" fill="#E7C868"/>
+<line x1="712.1" y1="667" x2="937.9" y2="667" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="712.1" cy="667" r="8" fill="#55D5D0"/><circle cx="937.9" cy="667" r="8" fill="#55D5D0"/>
+<line x1="700.1" y1="684" x2="949.9" y2="684" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="700.1" cy="684" r="8" fill="#E7C868"/><circle cx="949.9" cy="684" r="8" fill="#E7C868"/>
+<line x1="716.7" y1="701" x2="933.3" y2="701" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="716.7" cy="701" r="8" fill="#55D5D0"/><circle cx="933.3" cy="701" r="8" fill="#55D5D0"/>
+<line x1="755.0" y1="718" x2="895.0" y2="718" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="755.0" cy="718" r="8" fill="#E7C868"/><circle cx="895.0" cy="718" r="8" fill="#E7C868"/>
+<line x1="799.4" y1="735" x2="850.6" y2="735" stroke="#55D5D0" stroke-width="5" opacity="0.72"/>
+<circle cx="799.4" cy="735" r="8" fill="#55D5D0"/><circle cx="850.6" cy="735" r="8" fill="#55D5D0"/>
+<line x1="831.9" y1="752" x2="818.1" y2="752" stroke="#E7C868" stroke-width="5" opacity="0.72"/>
+<circle cx="831.9" cy="752" r="8" fill="#E7C868"/><circle cx="818.1" cy="752" r="8" fill="#E7C868"/>
+<path d="M770 390 C930 510 700 610 870 760" fill="none" stroke="#F1D47A" stroke-width="8" opacity="0.8"/><path d="M880 390 C700 510 950 610 780 760" fill="none" stroke="#4ED1CC" stroke-width="8" opacity="0.75"/>
+<text x="128" y="455" font-family="Arial Black, Impact, sans-serif" font-size="58" fill="#F8E8B8">ENGINEERING-GRADE</text>
+<text x="128" y="520" font-family="Arial Black, Impact, sans-serif" font-size="72" fill="url(#gold)">AGENT INFRA</text>
+<text x="132" y="582" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#F7E6BF">Plan → Act → Observe → Evaluate → Evolve</text>
+<text x="132" y="638" font-family="Arial, sans-serif" font-size="26" fill="#D6C29A">Recent upgrades: Repo Index · Trace Context · TUI shortcuts · Model switching · Product messaging.</text>
+
+<g transform="rotate(5 285.35719493354907 888.0675967983252)" filter="url(#shadow)">
+<polygon points="108.7,851.1 158.5,840.3 191.5,851.0 244.3,844.6 283.2,843.2 336.2,840.4 384.0,852.0 417.3,836.4 470.4,851.7 470.6,848.2 469.5,863.0 472.8,871.2 471.1,883.1 477.9,882.0 465.8,888.9 465.5,907.6 474.0,903.9 478.2,925.6 475.7,918.3 426.7,932.1 378.0,919.0 336.1,924.2 288.0,933.6 243.8,929.2 189.3,921.0 147.3,918.1 103.2,923.3 113.1,915.0 97.9,915.8 100.8,896.4 102.7,886.6 101.8,887.6 101.3,881.3 98.8,873.7 99.7,861.9 103.7,849.1" fill="#F2E2B8"/>
+<text x="129.35719493354907" y="880.0675967983252" font-family="Arial Black, Impact, sans-serif" font-size="28" fill="#15110D">REPO INDEX</text>
+<text x="129.35719493354907" y="909.0675967983252" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#6A4B22">symbol-level search</text>
+</g>
+<g transform="rotate(5 722.5933975328221 887.3517233831386)" filter="url(#shadow)">
+<polygon points="548.2,837.8 594.5,847.9 635.4,847.6 683.0,843.3 721.6,845.3 765.0,848.5 819.8,843.6 860.8,846.6 907.7,849.9 911.6,852.6 912.6,852.0 910.6,872.7 911.0,883.4 909.9,877.7 900.3,894.7 914.9,898.8 906.8,901.8 899.9,917.7 903.5,921.6 861.3,918.5 823.3,931.7 764.2,925.8 729.0,924.9 684.4,930.9 629.6,929.5 583.9,927.8 542.0,930.9 535.8,923.7 539.2,901.7 544.7,895.9 544.2,889.9 545.0,887.4 544.5,870.3 542.3,867.7 550.2,853.3 538.1,851.4" fill="#E9D299"/>
+<text x="566.5933975328221" y="879.3517233831386" font-family="Arial Black, Impact, sans-serif" font-size="28" fill="#15110D">TUI SHORTCUTS</text>
+<text x="566.5933975328221" y="908.3517233831386" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#6A4B22">F2 / Ctrl+R / Ctrl+X</text>
+</g>
+<g transform="rotate(3 294.1774184281432 1008.5686966734722)" filter="url(#shadow)">
+<polygon points="113.6,958.5 166.1,959.8 213.1,971.5 243.3,963.9 301.8,972.1 341.5,960.9 383.3,971.7 428.9,965.9 473.4,965.0 486.4,966.9 484.3,981.1 485.4,992.4 474.9,1003.7 479.0,998.0 471.2,1013.6 478.4,1018.8 473.4,1027.7 476.2,1043.8 471.2,1050.6 439.0,1040.5 394.7,1050.0 348.7,1043.2 294.6,1044.9 259.0,1048.0 203.2,1045.4 156.2,1039.3 107.8,1051.9 110.7,1045.3 110.2,1026.4 114.4,1017.0 112.2,1021.1 120.3,1010.6 116.3,1004.0 121.2,990.0 117.7,973.8 117.9,972.0" fill="#F7ECCB"/>
+<text x="138.1774184281432" y="1000.5686966734722" font-family="Arial Black, Impact, sans-serif" font-size="28" fill="#15110D">MODEL SWITCH</text>
+<text x="138.1774184281432" y="1029.5686966734722" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#6A4B22">/model &lt;name&gt;</text>
+</g>
+<g transform="rotate(2 725.0533601848144 1014.3118513666963)" filter="url(#shadow)">
+<polygon points="544.8,976.9 591.5,965.0 634.9,966.8 678.0,974.1 730.0,968.8 769.0,970.0 821.5,964.2 866.7,963.5 910.1,975.3 910.9,977.8 907.4,990.9 908.9,995.7 906.0,997.9 910.9,1008.4 907.9,1024.5 905.3,1020.0 916.0,1034.0 914.0,1039.5 906.4,1056.3 864.4,1053.5 816.6,1055.3 773.6,1057.0 733.1,1045.8 688.3,1050.5 638.6,1051.2 587.7,1057.3 552.5,1046.3 543.9,1048.3 549.9,1043.4 544.9,1020.9 551.9,1026.4 545.5,1010.8 544.2,1007.6 540.6,989.3 552.6,980.5 550.3,981.7" fill="#F2E2B8"/>
+<text x="569.0533601848144" y="1006.3118513666963" font-family="Arial Black, Impact, sans-serif" font-size="28" fill="#15110D">TRACE CONTEXT</text>
+<text x="569.0533601848144" y="1035.3118513666964" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#6A4B22">prompt + context events</text>
+</g>
+<g transform="rotate(-4 296.9301703221799 1136.3181902715355)" filter="url(#shadow)">
+<polygon points="117.8,1085.0 167.1,1088.0 214.9,1094.6 250.7,1086.4 295.5,1094.5 348.2,1086.1 383.8,1092.7 437.6,1090.5 477.5,1093.9 474.1,1097.3 481.3,1116.1 484.2,1123.1 481.5,1120.9 477.9,1140.7 485.2,1138.4 474.3,1149.7 484.7,1156.6 478.0,1168.8 488.7,1169.9 428.9,1171.7 389.4,1177.2 340.2,1179.1 303.3,1174.4 249.1,1181.8 205.2,1179.4 158.2,1169.9 121.1,1171.0 124.2,1166.1 111.9,1153.5 115.6,1152.4 124.1,1135.9 115.2,1128.7 124.5,1119.4 109.8,1109.9 115.2,1115.1 123.1,1104.2" fill="#E9D299"/>
+<text x="140.9301703221799" y="1128.3181902715355" font-family="Arial Black, Impact, sans-serif" font-size="28" fill="#15110D">README POLISH</text>
+<text x="140.9301703221799" y="1157.3181902715355" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#6A4B22">production positioning</text>
+</g>
+<g transform="rotate(2 729.9505961059572 1136.9055279690783)" filter="url(#shadow)">
+<polygon points="545.0,1095.3 596.0,1092.4 638.2,1096.5 692.3,1100.7 731.5,1086.6 771.3,1086.2 822.4,1099.1 870.3,1097.0 913.0,1097.2 911.9,1106.0 908.4,1112.6 910.1,1118.2 914.1,1122.9 918.7,1133.5 917.1,1138.1 917.0,1148.8 913.0,1157.9 919.8,1159.7 910.1,1167.9 871.0,1172.7 821.1,1182.2 770.8,1178.8 735.5,1181.7 683.6,1178.5 642.7,1179.8 602.7,1168.0 555.2,1168.6 553.4,1166.2 554.4,1163.1 556.6,1155.3 544.1,1142.1 542.1,1140.8 546.8,1128.8 544.4,1113.3 555.7,1108.7 554.5,1102.6" fill="#F7ECCB"/>
+<text x="573.9505961059572" y="1128.9055279690783" font-family="Arial Black, Impact, sans-serif" font-size="28" fill="#15110D">62 TESTS</text>
+<text x="573.9505961059572" y="1157.9055279690783" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#6A4B22">green baseline</text>
+</g>
+<g transform="rotate(-8 195 1222)"><rect x="92" y="1170" width="320" height="92" rx="4" fill="none" stroke="#B64032" stroke-width="6"/><text x="118" y="1228" font-family="Arial Black, Impact, sans-serif" font-size="42" fill="#B64032">62 TESTS PASSED</text></g>
+<g transform="rotate(6 755 1192)"><rect x="640" y="1150" width="300" height="82" fill="#111" opacity="0.9"/><text x="665" y="1202" font-family="Arial Black, Impact, sans-serif" font-size="35" fill="#F2D36B">koppx/Evolva</text></g>
+
+<text x="90" y="1335" font-family="Arial Black, Impact, sans-serif" font-size="38" fill="#17120D">TRACE / EVAL / MEMORY / SKILLS / MCP / SANDBOX</text>
+<text x="92" y="1386" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#4B3A22">Open-source local Agent Harness for observable, evaluable, self-improving systems.</text>
+
+<rect x="544" y="424" width="50" height="13" fill="#A53A32" opacity="0.36" transform="rotate(-4.6 569.0 430.5)"/>
+<rect x="513" y="1151" width="59" height="18" fill="#A53A32" opacity="0.42" transform="rotate(24.0 542.5 1160.0)"/>
+<rect x="93" y="562" width="64" height="10" fill="#A53A32" opacity="0.31" transform="rotate(-20.2 125.0 567.0)"/>
+<rect x="746" y="935" width="36" height="15" fill="#A53A32" opacity="0.35" transform="rotate(-4.2 764.0 942.5)"/>
+<rect x="710" y="501" width="72" height="25" fill="#F1E3C0" opacity="0.26" transform="rotate(14.0 746.0 513.5)"/>
+<rect x="306" y="1180" width="42" height="19" fill="#D5AA35" opacity="0.23" transform="rotate(11.9 327.0 1189.5)"/>
+<rect x="273" y="400" width="40" height="15" fill="#A53A32" opacity="0.43" transform="rotate(-10.9 293.0 407.5)"/>
+<rect x="212" y="688" width="29" height="20" fill="#D5AA35" opacity="0.32" transform="rotate(24.6 226.5 698.0)"/>
+<rect x="256" y="1350" width="76" height="11" fill="#2BBEC0" opacity="0.21" transform="rotate(24.5 294.0 1355.5)"/>
+<rect x="506" y="493" width="78" height="22" fill="#D5AA35" opacity="0.26" transform="rotate(-23.0 545.0 504.0)"/>
+<rect x="142" y="123" width="37" height="27" fill="#111" opacity="0.20" transform="rotate(-15.3 160.5 136.5)"/>
+<rect x="544" y="384" width="53" height="27" fill="#D5AA35" opacity="0.36" transform="rotate(13.7 570.5 397.5)"/>
+<rect x="26" y="236" width="65" height="27" fill="#111" opacity="0.19" transform="rotate(-7.5 58.5 249.5)"/>
+<rect x="368" y="309" width="27" height="14" fill="#D5AA35" opacity="0.38" transform="rotate(-23.1 381.5 316.0)"/>
+<rect x="955" y="436" width="77" height="8" fill="#D5AA35" opacity="0.28" transform="rotate(-4.6 993.5 440.0)"/>
+<rect x="655" y="659" width="29" height="14" fill="#F1E3C0" opacity="0.33" transform="rotate(14.8 669.5 666.0)"/>
+<rect x="84" y="855" width="31" height="20" fill="#111" opacity="0.32" transform="rotate(-17.3 99.5 865.0)"/>
+<rect x="688" y="355" width="50" height="16" fill="#2BBEC0" opacity="0.36" transform="rotate(24.4 713.0 363.0)"/>
+<rect x="447" y="125" width="44" height="26" fill="#D5AA35" opacity="0.18" transform="rotate(-4.3 469.0 138.0)"/>
+<rect x="805" y="765" width="66" height="14" fill="#2BBEC0" opacity="0.23" transform="rotate(11.4 838.0 772.0)"/>
+<rect x="26" y="909" width="82" height="13" fill="#2BBEC0" opacity="0.20" transform="rotate(-19.3 67.0 915.5)"/>
+<rect x="611" y="766" width="54" height="13" fill="#A53A32" opacity="0.33" transform="rotate(-24.3 638.0 772.5)"/>
+<rect x="676" y="832" width="30" height="26" fill="#111" opacity="0.38" transform="rotate(21.4 691.0 845.0)"/>
+<rect x="195" y="318" width="47" height="17" fill="#A53A32" opacity="0.43" transform="rotate(1.1 218.5 326.5)"/>
+<rect x="131" y="805" width="56" height="14" fill="#D5AA35" opacity="0.43" transform="rotate(-18.7 159.0 812.0)"/>
+<rect x="1018" y="1008" width="45" height="9" fill="#111" opacity="0.28" transform="rotate(21.3 1040.5 1012.5)"/>
+<rect x="945" y="1290" width="69" height="13" fill="#A53A32" opacity="0.35" transform="rotate(6.1 979.5 1296.5)"/>
+<rect x="220" y="988" width="36" height="26" fill="#A53A32" opacity="0.43" transform="rotate(-22.9 238.0 1001.0)"/>
+<rect x="180" y="805" width="47" height="11" fill="#A53A32" opacity="0.38" transform="rotate(-12.6 203.5 810.5)"/>
+<rect x="938" y="414" width="27" height="25" fill="#F1E3C0" opacity="0.27" transform="rotate(8.4 951.5 426.5)"/>
+<rect x="419" y="1247" width="54" height="25" fill="#D5AA35" opacity="0.26" transform="rotate(7.5 446.0 1259.5)"/>
+<rect x="275" y="891" width="49" height="19" fill="#2BBEC0" opacity="0.23" transform="rotate(0.2 299.5 900.5)"/>
+<rect x="23" y="1287" width="56" height="22" fill="#A53A32" opacity="0.35" transform="rotate(-2.7 51.0 1298.0)"/>
+<rect x="858" y="958" width="78" height="13" fill="#2BBEC0" opacity="0.20" transform="rotate(-5.0 897.0 964.5)"/>
+<rect x="387" y="901" width="48" height="10" fill="#2BBEC0" opacity="0.36" transform="rotate(0.2 411.0 906.0)"/>
+<rect x="61" y="1323" width="33" height="10" fill="#D5AA35" opacity="0.32" transform="rotate(13.9 77.5 1328.0)"/>
+</svg>
