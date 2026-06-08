@@ -16,7 +16,7 @@
 <p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-FFF0B3?style=for-the-badge&labelColor=0B0B0F" />
   <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-Runtime-D6A84F?style=for-the-badge&labelColor=0B0B0F" />
-  <img alt="CLI/TUI" src="https://img.shields.io/badge/CLI%20%2F%20TUI-Ready-EAD58B?style=for-the-badge&labelColor=0B0B0F" />
+  <img alt="TUI-first" src="https://img.shields.io/badge/TUI--first-Workbench-EAD58B?style=for-the-badge&labelColor=0B0B0F" />
   <img alt="MCP" src="https://img.shields.io/badge/MCP-stdio-9F7A30?style=for-the-badge&labelColor=0B0B0F" />
   <img alt="Local First" src="https://img.shields.io/badge/Local--First-Agent%20Harness-2E8B57?style=for-the-badge&labelColor=0B0B0F" />
 </p>
@@ -35,6 +35,8 @@ Every run is designed to leave behind inspectable traces, reproducible eval sign
 
 ## Quick Start
 
+Evolva is TUI-first. After installation, run `evolva` to open the local workbench for chat, tool execution, MCP onboarding, Trace inspection, model switching, Workflow orchestration, and Self-Evolution.
+
 ```bash
 git clone git@github.com:koppx/Evolva.git
 cd Evolva
@@ -44,15 +46,29 @@ python3 -m pip install -e ".[dev]"
 export OPENAI_API_KEY="..."
 export OPENAI_MODEL="gpt-4o-mini"
 
-python3 -m evolva.cli chat
+# Default product entry: TUI workbench
+evolva
 ```
 
-More entry points:
+Inside the TUI, use Slash Commands:
+
+```text
+/model gpt-4o-mini
+/repo build
+/repo search SelfEvolutionEngine
+/mcp add filesystem npx -y @modelcontextprotocol/server-filesystem .
+/mcp tools filesystem
+/trace list
+/dream --min-confidence 0.8
+/evolve audit
+```
+
+A small set of scriptable commands remains available for CI and automation:
 
 ```bash
-python3 -m evolva.cli tui
-python3 -m evolva.cli ask "Remember: run tests after editing Python"
-python3 -m evolva.cli ask "Describe this image" --image evolva/workspace/example.png
+evolva ask "Analyze this repository and produce a verifiable improvement plan"
+evolva eval evals/tasks/smoke.jsonl --yes
+evolva dream --json
 ```
 
 Without `OPENAI_API_KEY`, Evolva falls back to a limited local rule-based mode. Local tools, memory, skills, todo, traces, workflows, and evals remain available for offline testing and extension.
@@ -72,17 +88,17 @@ Evolva is a composable, observable, and continuously improving Agent Harness. It
 | Capability | What it does | Entry |
 | --- | --- | --- |
 | **LangGraph Runtime** | Explicit `StateGraph` nodes: `prepare -> llm -> tool -> observe -> persist -> auto_evolve` | `evolva/agent/langgraph_runtime.py` |
-| **CLI / TUI** | Interactive chat, one-shot ask, curses TUI | `python3 -m evolva.cli chat` / `tui` |
+| **TUI Workbench** | Default product entry for chat, tool logs, Trace, model switching, MCP, Workflow, and Self-Evolution | `evolva` |
 | **Tools** | File, shell, Python, web, todo, memory, context, policy, MCP, delegation | `/tools` / `/run` |
 | **Repo Index** | Local semantic repository index for symbols, references, paths, and code chunks | `/repo build` / `/repo search` |
 | **Memory / Skills** | Long-term facts, preferences, lessons, Markdown playbooks | `/memory` / `/skills` |
-| **MCP** | stdio MCP client for external tool servers | `python3 -m evolva.cli mcp ...` |
-| **Workflow** | JSON workflow specs with role agents, agent calls, and tool nodes | `python3 -m evolva.cli workflow ...` |
-| **Trace / Replay** | Prompts, tool calls, policy decisions, latency, errors, outputs | `python3 -m evolva.cli trace ...` |
-| **Eval Harness** | JSONL tasks with text, regex, artifacts, memory, context, and tool-error checks | `python3 -m evolva.cli eval ...` |
+| **MCP** | Add stdio MCP servers inside the TUI with `/mcp add`, then inspect/call tools via `/mcp tools` and `mcp_call` | `/mcp` |
+| **Workflow** | JSON workflow specs with role agents, agent calls, and tool nodes, launched from the TUI | `/workflow` |
+| **Trace / Replay** | Prompts, tool calls, policy decisions, latency, errors, outputs, inspectable in the TUI | `/trace` |
+| **Eval Harness** | JSONL tasks with text, regex, artifacts, memory, context, and tool-error checks | `evolva eval ...` |
 | **Guardrails / Sandbox** | Path sandbox, dangerous command denylist, risk scoring, secret detection, approvals | `/policy` |
-| **Self-Evolution** | Turns feedback, trace patterns, and eval failures into memory and skills | `python3 -m evolva.cli evolve ...` |
-| **Dreaming** | Local background reflection: Evidence → Hypothesis → Critique → Action, with auditable reports and optional high-confidence promotion | `python3 -m evolva.cli dream` |
+| **Self-Evolution** | Turns feedback, trace patterns, and eval failures into memory and skills | `/evolve` / `/dream` |
+| **Dreaming** | Local background reflection: Evidence → Hypothesis → Critique → Action, with auditable reports and optional high-confidence promotion | `/dream` |
 
 ## Architecture
 
@@ -92,7 +108,7 @@ Evolva is a composable, observable, and continuously improving Agent Harness. It
 
 Evolva is organized into three lanes:
 
-1. **Reasoning & State**: CLI / TUI enters Evolva Core. The LangGraph runtime manages state and assembles Memory, Skills, Todo, Context, and Repo Index.
+1. **Reasoning & State**: the TUI Workbench is the default product entry. The scriptable CLI remains an automation path into Evolva Core, where the LangGraph runtime manages state and assembles Memory, Skills, Todo, Context, and Repo Index.
 2. **Guarded Execution**: tool calls pass through Policy and Sandbox before reaching files, shell, Python, web, MCP, workflows, and sub agents.
 3. **Feedback Loop**: Trace records behavior, Eval checks regressions, and Evolution distills feedback into long-term memory and reusable skills.
 
@@ -114,65 +130,57 @@ Markdown Skill
 Future Prompt Context
 ```
 
-Examples:
+TUI examples:
 
-```bash
-python3 -m evolva.cli evolve audit --show-proposals
-python3 -m evolva.cli evolve feedback "After editing Python files, run syntax checks and pytest."
-python3 -m evolva.cli evolve trace --apply
-python3 -m evolva.cli evolve eval --apply
-python3 -m evolva.cli dream
-python3 -m evolva.cli dream --json
-python3 -m evolva.cli dream --apply --min-confidence 0.8
+```text
+/evolve audit
+/evolve After editing Python files, run syntax checks and pytest.
+/evolve trace
+/evolve apply-trace
+/evolve apply-eval
+/dream
+/dream apply --min-confidence 0.8
 ```
 
 The resulting lessons include **category / confidence / evidence / fingerprint**, are persisted in memory, and can be materialized as Markdown skills for future context injection. `evolve audit` summarizes lesson coverage, evolved skills, pending Trace/Eval proposals, and recommended next steps.
 
 `dream` is Evolva's local Dreaming loop. It is inspired by publicly observable background-reflection workflows, but remains fully local-first and does not require an extra cloud service or LLM. It scans recent traces, the latest eval report, and current Memory/Skill coverage, then runs **Evidence → Hypothesis → Critique → Action**: collect signals, generate falsifiable hypotheses, reject low-confidence/duplicate/weak-evidence items with deterministic drift guards, and write an auditable `evolva/dreams/*.json` report. With `--apply`, only high-confidence proposals pass through the Self-Evolution quality gate into Memory / Skill.
 
-## Daily Commands
+## TUI Workbench
+
+Daily usage is centered on Slash Commands inside the TUI. The command-line subcommands remain for automation, CI, and one-shot scripting.
 
 ```bash
-# Chat / TUI / Ask
-python3 -m evolva.cli chat
-python3 -m evolva.cli tui
-python3 -m evolva.cli ask "Analyze this repository and produce a verifiable improvement plan"
+# Main product entry
+evolva
 
-# Trace
-python3 -m evolva.cli trace list
-python3 -m evolva.cli trace show <run_id>
-python3 -m evolva.cli trace replay <run_id>
-python3 -m evolva.cli trace context <run_id>
+# Traditional line-based chat, if needed
+evolva --chat
+```
 
-# Model
-# In interactive mode: /model shows the current model, /model <name> switches it
-python3 -m evolva.cli chat
+Common TUI flows:
 
-# Eval
-python3 -m evolva.cli eval evals/tasks/smoke.jsonl --yes
+```text
+/model [name]                         Show/switch model
+/repo build                           Build repository index
+/repo search <query>                  Search code symbols, references, and chunks
+/mcp                                  List configured MCP servers
+/mcp add <name> <command> [args...]   Add a stdio MCP server
+/mcp tools [server]                   List MCP tools
+/run mcp_call {"server":"...","tool":"...","arguments":{}}
+/trace list                           List recent runs
+/trace context latest                 Inspect latest context/prompt events
+/workflow <json>                      Run a workflow spec
+/evolve audit                         Inspect self-evolution coverage
+/dream --min-confidence 0.8           Run Dreaming drift-guard analysis
+```
 
-# Dream loop
-python3 -m evolva.cli dream
-python3 -m evolva.cli dream --json
-python3 -m evolva.cli dream --apply --min-confidence 0.8
+Scriptable/CI entries are kept for automation and regression baselines:
 
-# Workflow
-python3 -m evolva.cli workflow path/to/workflow.json --yes
-
-# Repo Index
-# In interactive mode: /repo build, then /repo search SelfEvolutionEngine evolve
-python3 -m evolva.cli chat
-
-# MCP
-python3 -m evolva.cli mcp servers
-python3 -m evolva.cli mcp tools filesystem
-python3 -m evolva.cli mcp call filesystem list_directory '{"path":"."}' --yes
-
-# Self-evolution
-python3 -m evolva.cli evolve status
-python3 -m evolva.cli evolve audit --show-proposals
-python3 -m evolva.cli evolve trace --apply
-python3 -m evolva.cli evolve eval --apply
+```bash
+evolva ask "Analyze this repository and produce a verifiable improvement plan"
+evolva eval evals/tasks/smoke.jsonl --yes
+evolva dream --json
 ```
 
 <details>
@@ -198,6 +206,8 @@ python3 -m evolva.cli evolve eval --apply
 /repo build               Build the local repository index
 /repo search <query>      Search code symbols, references, and chunks
 /mcp                      List MCP servers
+/mcp add <name> <cmd...>  Add a stdio MCP server
+/mcp remove <name>        Remove an MCP server config
 /mcp tools [server]       List MCP tools
 /image <path|url> [text]  Ask with an image
 /evolve [feedback]        Turn feedback into memory + skill
@@ -276,8 +286,8 @@ python3 -m pytest -q
 
 ```text
 evolva/
-  cli.py                     CLI entry
-  tui.py                     curses terminal UI
+  cli.py                     `evolva` console entry, defaults to TUI
+  tui.py                     TUI workbench
   agent/core.py              public agent facade
   agent/langgraph_runtime.py LangGraph StateGraph runtime
   agent/dream.py             offline Dream reflection loop

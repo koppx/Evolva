@@ -37,6 +37,9 @@ Commands:
   /repo build          Build local repository index
   /repo search <query> Search symbols, references, and code chunks
   /mcp                 List MCP servers
+  /mcp add <name> <cmd...>
+                       Add a stdio MCP server to the local workspace
+  /mcp remove <name>   Remove a local MCP server config
   /mcp tools [server]  List MCP tools
   /image <path|url> [text]
                        Ask with one image
@@ -146,11 +149,20 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
         rest = line.removeprefix("/mcp").strip()
         if not rest:
             print(agent._call_tool("mcp_servers", {}).output)
+        elif rest.startswith("add "):
+            parts = shlex.split(rest.removeprefix("add ").strip())
+            if len(parts) < 2:
+                print("Usage: /mcp add <name> <command> [args...]")
+            else:
+                print(agent._call_tool("mcp_add_server", {"name": parts[0], "command": parts[1], "args": parts[2:]}).output)
+        elif rest.startswith("remove "):
+            name = rest.removeprefix("remove ").strip()
+            print(agent._call_tool("mcp_remove_server", {"name": name}).output)
         elif rest.startswith("tools"):
             server = rest.removeprefix("tools").strip()
             print(agent._call_tool("mcp_tools", {"server": server}).output)
         else:
-            print("Usage: /mcp | /mcp tools [server] | /run mcp_call {...}")
+            print("Usage: /mcp | /mcp add <name> <command> [args...] | /mcp remove <name> | /mcp tools [server] | /run mcp_call {...}")
         return True
     if line.startswith("/image"):
         rest = line.removeprefix("/image").strip()
@@ -325,6 +337,14 @@ def mcp_cmd(args: argparse.Namespace) -> int:
     if args.mcp_cmd == "servers":
         print(agent._call_tool("mcp_servers", {}).output)
         return 0
+    if args.mcp_cmd == "add":
+        result = agent._call_tool("mcp_add_server", {"name": args.name, "command": args.command, "args": args.args})
+        print(result.output)
+        return 0 if result.ok else 1
+    if args.mcp_cmd == "remove":
+        result = agent._call_tool("mcp_remove_server", {"name": args.name})
+        print(result.output)
+        return 0 if result.ok else 1
     if args.mcp_cmd == "tools":
         print(agent._call_tool("mcp_tools", {"server": args.server or ""}).output)
         return 0
@@ -395,26 +415,22 @@ def dream_cmd(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="evolva")
-    sub = parser.add_subparsers(dest="cmd", required=False)
-    chat_p = sub.add_parser("chat", help="Start interactive chat")
-    chat_p.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting")
-    chat_p.add_argument("--show-tools", action="store_true", help="Print tool call logs")
-    chat_p.set_defaults(func=chat)
-
-    once_p = sub.add_parser("ask", help="Ask one question and exit")
+    parser = argparse.ArgumentParser(
+        prog="evolva",
+        description="Open Evolva's TUI workbench by default. Subcommands are reserved for automation and CI.",
+    )
+    parser.add_argument("--chat", action="store_true", help="Start plain line-based chat instead of the default TUI")
+    parser.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting in default TUI mode")
+    parser.add_argument("--no-tools", action="store_true", help="Hide the TUI tool log panel at startup")
+    sub = parser.add_subparsers(dest="cmd", required=False, metavar="{ask,trace,eval,evolve,optimize,dream,workflow,mcp}")
+    once_p = sub.add_parser("ask", help="Automation: ask one question and exit")
     once_p.add_argument("message")
     once_p.add_argument("--image", action="append", help="Attach an image path or URL; can be repeated")
     once_p.add_argument("--yes", action="store_true")
     once_p.add_argument("--show-tools", action="store_true")
     once_p.set_defaults(func=once)
 
-    tui_p = sub.add_parser("tui", help="Start terminal UI chat")
-    tui_p.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting")
-    tui_p.add_argument("--no-tools", action="store_true", help="Hide tool log panel at startup")
-    tui_p.set_defaults(func=tui)
-
-    trace_p = sub.add_parser("trace", help="Inspect or replay execution traces")
+    trace_p = sub.add_parser("trace", help="Automation: inspect or replay execution traces")
     trace_sub = trace_p.add_subparsers(dest="trace_cmd", required=True)
     trace_list = trace_sub.add_parser("list", help="List recent traces")
     trace_list.add_argument("--limit", type=int, default=20)
@@ -429,12 +445,12 @@ def build_parser() -> argparse.ArgumentParser:
     trace_replay.add_argument("run_id")
     trace_replay.set_defaults(func=trace_cmd)
 
-    eval_p = sub.add_parser("eval", help="Run jsonl eval tasks")
+    eval_p = sub.add_parser("eval", help="Automation: run jsonl eval tasks")
     eval_p.add_argument("tasks", type=lambda s: __import__("pathlib").Path(s))
     eval_p.add_argument("--yes", action="store_true", help="Approve shell/python tools during eval")
     eval_p.set_defaults(func=eval_cmd)
 
-    evolve_p = sub.add_parser("evolve", help="Inspect or apply self-evolution proposals")
+    evolve_p = sub.add_parser("evolve", help="Automation: inspect or apply self-evolution proposals")
     evolve_sub = evolve_p.add_subparsers(dest="evolve_cmd", required=True)
     evolve_status = evolve_sub.add_parser("status", help="Show evolution status")
     evolve_status.set_defaults(func=evolve_cmd)
@@ -455,12 +471,12 @@ def build_parser() -> argparse.ArgumentParser:
     evolve_feedback.add_argument("feedback")
     evolve_feedback.set_defaults(func=evolve_cmd)
 
-    optimize_p = sub.add_parser("optimize", help="Scan project health and list safe optimization opportunities")
+    optimize_p = sub.add_parser("optimize", help="Automation: scan project health and list safe optimization opportunities")
     optimize_p.add_argument("--apply", action="store_true", help="Apply conservative auto-fixes such as stale badge updates and local cache cleanup")
     optimize_p.add_argument("--fail-on-items", action="store_true", help="Exit non-zero when medium/high unfixed items remain")
     optimize_p.set_defaults(func=optimize_cmd)
 
-    dream_p = sub.add_parser("dream", help="Run Evolva's local trace/eval/memory reflection loop")
+    dream_p = sub.add_parser("dream", help="Automation: run Evolva's local trace/eval/memory reflection loop")
     dream_p.add_argument("--apply", action="store_true", help="Apply high-confidence proposals as Memory/Skill lessons")
     dream_p.add_argument("--limit", type=int, default=20, help="Recent trace run limit")
     dream_p.add_argument("--report", type=lambda s: __import__("pathlib").Path(s), help="Eval report JSON; defaults to latest")
@@ -468,16 +484,26 @@ def build_parser() -> argparse.ArgumentParser:
     dream_p.add_argument("--json", action="store_true", help="Print the full Dream report JSON")
     dream_p.set_defaults(func=dream_cmd)
 
-    workflow_p = sub.add_parser("workflow", help="Run a JSON workflow spec")
+    workflow_p = sub.add_parser("workflow", help="Automation: run a JSON workflow spec")
     workflow_p.add_argument("spec", type=lambda s: __import__("pathlib").Path(s))
     workflow_p.add_argument("--yes", action="store_true", help="Approve shell/python tools during workflow")
     workflow_p.set_defaults(func=workflow_cmd)
 
-    mcp_p = sub.add_parser("mcp", help="Inspect or call MCP stdio servers")
+    mcp_p = sub.add_parser("mcp", help="Automate MCP stdio servers; in daily use prefer TUI /mcp")
     mcp_sub = mcp_p.add_subparsers(dest="mcp_cmd", required=True)
     mcp_servers_p = mcp_sub.add_parser("servers", help="List configured MCP servers")
     mcp_servers_p.add_argument("--yes", action="store_true")
     mcp_servers_p.set_defaults(func=mcp_cmd)
+    mcp_add_p = mcp_sub.add_parser("add", help="Persist a stdio MCP server config")
+    mcp_add_p.add_argument("name")
+    mcp_add_p.add_argument("command")
+    mcp_add_p.add_argument("args", nargs=argparse.REMAINDER)
+    mcp_add_p.add_argument("--yes", action="store_true")
+    mcp_add_p.set_defaults(func=mcp_cmd)
+    mcp_remove_p = mcp_sub.add_parser("remove", help="Remove a configured MCP server")
+    mcp_remove_p.add_argument("name")
+    mcp_remove_p.add_argument("--yes", action="store_true")
+    mcp_remove_p.set_defaults(func=mcp_cmd)
     mcp_tools_p = mcp_sub.add_parser("tools", help="List MCP tools")
     mcp_tools_p.add_argument("server", nargs="?")
     mcp_tools_p.add_argument("--yes", action="store_true")
@@ -494,8 +520,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if getattr(args, "chat", False) and not getattr(args, "cmd", None):
+        return chat(argparse.Namespace(yes=args.yes, show_tools=False))
     if not hasattr(args, "func"):
-        args = parser.parse_args(["chat"] + (argv or []))
+        return tui(argparse.Namespace(yes=args.yes, no_tools=args.no_tools))
     return args.func(args)
 
 

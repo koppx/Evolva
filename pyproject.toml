@@ -1,7 +1,7 @@
 [project]
 name = "evolva"
 version = "0.1.0"
-description = "A local self-evolving super-agent with CLI/TUI chat, tools, memory, skills, MCP, and workflows."
+description = "A TUI-first local self-evolving agent harness with tools, memory, skills, MCP, workflow, trace, eval, and guardrails."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["langgraph>=1.2.4"]

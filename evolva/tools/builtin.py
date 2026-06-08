@@ -172,6 +172,22 @@ def build_registry(
         names = mcp.list_servers()
         return ToolResult(True, "\n".join(names) or "No MCP servers configured", names)
 
+    def mcp_add_server(name: str, command: str, args: list[str] | None = None, env: dict | None = None, cwd: str | None = None) -> ToolResult:
+        if mcp is None:
+            return ToolResult(False, "MCP manager is not configured")
+        config = mcp.add_server(name, command, list(args or []), env=dict(env or {}), cwd=cwd)
+        output = f"Added MCP server `{config.name}`: {config.command} {' '.join(config.args)}".strip()
+        context.add("artifact", output, meta={"server": config.name, "config_file": str(mcp.config_file)})
+        return ToolResult(True, output, {"name": config.name, "command": config.command, "args": config.args, "config_file": str(mcp.config_file)})
+
+    def mcp_remove_server(name: str) -> ToolResult:
+        if mcp is None:
+            return ToolResult(False, "MCP manager is not configured")
+        existed = mcp.remove_server(name)
+        output = f"Removed MCP server `{name}`" if existed else f"MCP server `{name}` was not configured"
+        context.add("artifact", output, meta={"server": name, "config_file": str(mcp.config_file)})
+        return ToolResult(True, output, {"name": name, "removed": existed, "config_file": str(mcp.config_file)})
+
     def mcp_tools(server: str = "") -> ToolResult:
         if mcp is None:
             return ToolResult(False, "MCP manager is not configured")
@@ -232,6 +248,8 @@ def build_registry(
     reg.register(Tool("repo_index_build", "Build a local semantic repository index with symbol chunks", {"max_files": "int"}, repo_index_build))
     reg.register(Tool("repo_index_search", "Search repository symbols, references, paths, and code chunks", {"query": "str", "limit": "int"}, repo_index_search))
     reg.register(Tool("mcp_servers", "List configured MCP servers", {}, mcp_servers))
+    reg.register(Tool("mcp_add_server", "Persist a stdio MCP server config", {"name": "str", "command": "str", "args": "list[str]", "env": "dict", "cwd": "str"}, mcp_add_server))
+    reg.register(Tool("mcp_remove_server", "Remove a configured MCP server", {"name": "str"}, mcp_remove_server))
     reg.register(Tool("mcp_tools", "List tools from configured MCP servers", {"server": "str"}, mcp_tools))
     reg.register(Tool("mcp_call", "Call an MCP tool via stdio JSON-RPC", {"server": "str", "tool": "str", "arguments": "dict"}, mcp_call, needs_confirmation=True))
     reg.register(Tool("delegate_agent", "Delegate a task to a role agent: planner, researcher, coder, reviewer", {"role": "str", "task": "str", "context_text": "str"}, delegate_agent))

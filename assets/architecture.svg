@@ -38,8 +38,8 @@
 
   <!-- Interface and core -->
   <rect x="72" y="178" width="222" height="100" rx="17" class="box"/>
-  <text x="132" y="224" class="label">CLI / TUI</text>
-  <text x="103" y="252" class="small">chat · commands · image</text>
+  <text x="132" y="224" class="label">TUI Workbench</text>
+  <text x="103" y="252" class="small">chat · commands · mcp</text>
 
   <rect x="396" y="170" width="285" height="132" rx="21" class="box"/>
   <text x="474" y="224" class="label">Evolva Core</text>

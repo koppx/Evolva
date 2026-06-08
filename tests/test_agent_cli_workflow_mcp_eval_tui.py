@@ -257,7 +257,13 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     parser = build_parser()
     assert parser.prog == "evolva"
     assert parser.parse_args(["ask", "hi", "--image", "a.png", "--yes"]).image == ["a.png"]
+    root_args = parser.parse_args([])
+    assert root_args.cmd is None and root_args.chat is False
+    chat_args = parser.parse_args(["--chat", "--yes"])
+    assert chat_args.cmd is None and chat_args.chat and chat_args.yes
     assert parser.parse_args(["mcp", "call", "s", "t", "{}", "--yes"]).mcp_cmd == "call"
+    parsed_mcp_add = parser.parse_args(["mcp", "add", "fs", "npx", "-y", "server", "."])
+    assert parsed_mcp_add.mcp_cmd == "add" and parsed_mcp_add.args == ["-y", "server", "."]
     assert parser.parse_args(["evolve", "trace", "--apply"]).evolve_cmd == "trace"
     assert parser.parse_args(["optimize", "--apply"]).apply
     assert parser.parse_args(["dream", "--apply", "--limit", "3"]).apply
@@ -269,11 +275,29 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     assert main(["ask", "remember main", "--yes"]) == 0
     assert "已记住" in capsys.readouterr().out
 
+    called = {}
+
+    def fake_run_tui(assume_yes=False, show_tools=True):
+        called["tui"] = (assume_yes, show_tools)
+        return 0
+
+    monkeypatch.setattr("evolva.cli.run_tui", fake_run_tui)
+    assert main([]) == 0
+    assert called["tui"] == (False, True)
+
+    def fake_chat(args):
+        called["chat"] = (args.yes, args.show_tools)
+        return 0
+
+    monkeypatch.setattr("evolva.cli.chat", fake_chat)
+    assert main(["--chat", "--yes"]) == 0
+    assert called["chat"] == (True, False)
+
     agent = EvolvaAgent(temp_config, assume_yes=True)
     run_id = agent.tracer.start("cli context")
     agent.tracer.event("prompt", {"message_count": 1})
     agent.tracer.end("ok")
-    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/dream", "/dream apply --limit 2 --min-confidence 0.8", "/workflow", "/run sandbox_info {}", "/unknown"]:
+    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp add cli-demo python3 server.py --flag", "/mcp remove cli-demo", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/dream", "/dream apply --limit 2 --min-confidence 0.8", "/workflow", "/run sandbox_info {}", "/unknown"]:
         assert handle_command(agent, line) is True
     assert handle_command(agent, "/exit") is False
     output = capsys.readouterr().out
@@ -284,8 +308,29 @@ def test_cli_mcp_cmd_json_error_and_success(monkeypatch, capsys, temp_config):
     monkeypatch.setattr("evolva.cli.AgentConfig", lambda: temp_config)
     assert mcp_cmd(Namespace(mcp_cmd="servers", yes=True)) == 0
     assert "No MCP servers" in capsys.readouterr().out
+    assert mcp_cmd(Namespace(mcp_cmd="add", name="fs", command="python3", args=["server.py"], yes=True)) == 0
+    assert "Added MCP server" in capsys.readouterr().out
+    assert mcp_cmd(Namespace(mcp_cmd="remove", name="fs", yes=True)) == 0
+    assert "Removed MCP server" in capsys.readouterr().out
     assert mcp_cmd(Namespace(mcp_cmd="call", server="s", tool="t", arguments="{", yes=True)) == 2
     assert "JSON error" in capsys.readouterr().out
+
+
+def test_mcp_manager_add_remove_persists_config(tmp_path):
+    cfg = tmp_path / "mcp" / "servers.json"
+    manager = MCPManager(cfg, root=tmp_path)
+    added = manager.add_server("filesystem", "npx", ["-y", "@modelcontextprotocol/server-filesystem", "."])
+
+    assert added.name == "filesystem"
+    assert manager.list_servers() == ["filesystem"]
+    data = json.loads(cfg.read_text())
+    assert data["servers"]["filesystem"]["command"] == "npx"
+    assert data["servers"]["filesystem"]["args"][-1] == "."
+
+    assert manager.remove_server("filesystem") is True
+    assert manager.list_servers() == []
+    assert json.loads(cfg.read_text())["servers"] == {}
+    assert manager.remove_server("filesystem") is False
 
 
 def test_cli_evolve_cmd_status_trace_eval_and_feedback(monkeypatch, capsys, temp_config, tmp_path):
@@ -345,6 +390,12 @@ def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, t
     assert any("Current model" in m.text for m in app.messages)
     app._handle_command("/model tui-test-model")
     assert app.agent.config.model == "tui-test-model"
+    app._handle_command("/mcp add tui-demo python3 server.py")
+    assert "tui-demo" in app.agent.mcp.list_servers()
+    assert any("Added MCP server" in m.text for m in app.messages)
+    app._handle_command("/mcp remove tui-demo")
+    assert "tui-demo" not in app.agent.mcp.list_servers()
+    assert any("Removed MCP server" in m.text for m in app.messages)
     app.input_text = "/mo"
     app._complete_command()
     assert app.input_text == "/model "

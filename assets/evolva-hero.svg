@@ -92,7 +92,7 @@
 
   <g transform="translate(132 536)">
     <rect width="1016" height="72" rx="20" fill="#030303" stroke="#B9851F"/>
-    <text x="34" y="45" class="terminal">$ python3 -m evolva.cli tui</text>
+    <text x="34" y="45" class="terminal">$ evolva</text>
     <text x="520" y="45" class="repo">GitHub: koppx/Evolva</text>
     <text x="850" y="45" class="star">Star welcome</text>
   </g>

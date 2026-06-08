@@ -18,7 +18,7 @@
   <g filter="url(#shadow)">
     <text x="630" y="236" fill="url(#text)" font-family="Inter, Avenir Next, ui-sans-serif, system-ui, sans-serif" font-size="104" font-weight="730" letter-spacing="-2">Evolva</text>
     <text x="636" y="292" fill="#A68A52" font-family="Inter, Avenir Next, ui-sans-serif, system-ui, sans-serif" font-size="24" letter-spacing="7">LOCAL SELF-EVOLVING AGENT HARNESS</text>
-    <text x="636" y="348" fill="#D8C18B" font-family="Inter, Avenir Next, ui-sans-serif, system-ui, sans-serif" font-size="27" opacity="0.92">CLI / TUI · Memory · Skills · MCP · Workflow · Eval · Trace · Policy</text>
+    <text x="636" y="348" fill="#D8C18B" font-family="Inter, Avenir Next, ui-sans-serif, system-ui, sans-serif" font-size="27" opacity="0.92">TUI Workbench · Memory · Skills · MCP · Workflow · Eval · Trace · Policy</text>
   </g>
   <g opacity="0.5" fill="#CFA95E"><circle cx="1325" cy="174" r="3"/><circle cx="1392" cy="226" r="2.5"/><circle cx="1305" cy="302" r="2.5"/><circle cx="1474" cy="325" r="3"/></g>
   <path d="M1325 174L1392 226L1305 302L1474 325" stroke="#CFA95E" stroke-opacity="0.3"/>

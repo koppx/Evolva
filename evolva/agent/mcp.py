@@ -166,6 +166,60 @@ class MCPManager:
     def list_servers(self) -> list[str]:
         return sorted(self.servers)
 
+    def add_server(
+        self,
+        name: str,
+        command: str,
+        args: list[str] | None = None,
+        *,
+        env: dict[str, str] | None = None,
+        cwd: str | None = None,
+        enabled: bool = True,
+    ) -> MCPServerConfig:
+        """Persist and activate a stdio MCP server configuration.
+
+        The method is intentionally local-first: it only edits Evolva's local
+        `servers.json` and refreshes the in-memory manager. Starting the server
+        still happens lazily when `/mcp tools` or `mcp_call` is used.
+        """
+        name = name.strip()
+        command = command.strip()
+        if not name:
+            raise ValueError("MCP server name cannot be empty")
+        if not command:
+            raise ValueError("MCP server command cannot be empty")
+        data = self._raw_config()
+        servers = data.setdefault("servers", {})
+        servers[name] = {
+            "command": command,
+            "args": list(args or []),
+            "env": dict(env or {}),
+            "enabled": bool(enabled),
+        }
+        if cwd:
+            servers[name]["cwd"] = cwd
+        self._write_config(data)
+        config = MCPServerConfig(name=name, command=command, args=list(args or []), env=dict(env or {}), cwd=cwd, enabled=enabled)
+        self.servers[name] = config
+        if name in self.clients:
+            self.clients[name].close()
+            self.clients.pop(name, None)
+        return config
+
+    def remove_server(self, name: str) -> bool:
+        """Remove a local MCP server configuration if it exists."""
+        data = self._raw_config()
+        servers = data.setdefault("servers", {})
+        existed = name in servers
+        if existed:
+            servers.pop(name, None)
+            self._write_config(data)
+        if name in self.clients:
+            self.clients[name].close()
+            self.clients.pop(name, None)
+        self.servers.pop(name, None)
+        return existed
+
     def client(self, server: str) -> MCPClient:
         if server not in self.servers:
             raise KeyError(f"Unknown MCP server: {server}")
@@ -190,6 +244,18 @@ class MCPManager:
         for client in self.clients.values():
             client.close()
         self.clients.clear()
+
+    def _raw_config(self) -> dict[str, Any]:
+        if not self.config_file.exists():
+            return {"servers": {}}
+        data = json.loads(self.config_file.read_text(encoding="utf-8"))
+        if "servers" in data:
+            return data
+        return {"servers": data if isinstance(data, dict) else {}}
+
+    def _write_config(self, data: dict[str, Any]) -> None:
+        self.config_file.parent.mkdir(parents=True, exist_ok=True)
+        self.config_file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def render_mcp_result(result: dict[str, Any]) -> str:

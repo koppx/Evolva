@@ -31,7 +31,7 @@ TUI keys:
   /exit          Quit
 
 Commands:
-  /help, /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp, /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /dream [apply|--min-confidence n], /run <tool> <json>
+  /help, /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp [add|remove|tools], /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /dream [apply|--min-confidence n], /run <tool> <json>
 """.strip()
 
 
@@ -314,11 +314,20 @@ class EvolvaTUI:
                 rest = line.removeprefix("/mcp").strip()
                 if not rest:
                     self._add_system(self.agent._call_tool("mcp_servers", {}).output)
+                elif rest.startswith("add "):
+                    parts = shlex.split(rest.removeprefix("add ").strip())
+                    if len(parts) < 2:
+                        self._add_system("Usage: /mcp add <name> <command> [args...]")
+                    else:
+                        self._add_system(self.agent._call_tool("mcp_add_server", {"name": parts[0], "command": parts[1], "args": parts[2:]}).output)
+                elif rest.startswith("remove "):
+                    name = rest.removeprefix("remove ").strip()
+                    self._add_system(self.agent._call_tool("mcp_remove_server", {"name": name}).output)
                 elif rest.startswith("tools"):
                     server = rest.removeprefix("tools").strip()
                     self._add_system(self.agent._call_tool("mcp_tools", {"server": server}).output)
                 else:
-                    self._add_system("Usage: /mcp | /mcp tools [server] | /run mcp_call {...}")
+                    self._add_system("Usage: /mcp | /mcp add <name> <command> [args...] | /mcp remove <name> | /mcp tools [server] | /run mcp_call {...}")
             elif line.startswith("/image"):
                 rest = line.removeprefix("/image").strip()
                 if not rest:
