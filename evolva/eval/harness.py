@@ -23,7 +23,7 @@ class EvalResult:
 
 
 class EvalHarness:
-    """Small stdlib eval harness for agent regression tests and demos."""
+    """Small stdlib eval harness for agent regression baselines."""
 
     def __init__(self, config: AgentConfig | None = None, *, assume_yes: bool = True):
         self.config = config or AgentConfig()

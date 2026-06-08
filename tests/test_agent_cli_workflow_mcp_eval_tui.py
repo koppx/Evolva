@@ -11,7 +11,7 @@ from evolva.agent.core import EvolvaAgent, SYSTEM_PROMPT
 from evolva.agent.mcp import MCPClient, MCPManager, MCPServerConfig, render_mcp_result
 from evolva.agent.multi_agent import MultiAgentCoordinator
 from evolva.agent.tracing import TraceRecorder
-from evolva.cli import build_parser, evolve_cmd, handle_command, main, mcp_cmd, once, optimize_cmd
+from evolva.cli import build_parser, dream_cmd, evolve_cmd, handle_command, main, mcp_cmd, once, optimize_cmd
 from evolva.eval.harness import EvalHarness, EvalResult, render_results
 from evolva.tui import EvolvaTUI, TUIConfirmation
 from evolva.workflow.engine import WorkflowEngine
@@ -260,6 +260,8 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     assert parser.parse_args(["mcp", "call", "s", "t", "{}", "--yes"]).mcp_cmd == "call"
     assert parser.parse_args(["evolve", "trace", "--apply"]).evolve_cmd == "trace"
     assert parser.parse_args(["optimize", "--apply"]).apply
+    assert parser.parse_args(["dream", "--apply", "--limit", "3"]).apply
+    assert parser.parse_args(["dream", "--min-confidence", "0.8", "--json"]).json
 
     monkeypatch.setattr("evolva.cli.AgentConfig", lambda: temp_config)
     assert once(Namespace(message="remember cli", image=None, yes=True, show_tools=False)) == 0
@@ -271,11 +273,11 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     run_id = agent.tracer.start("cli context")
     agent.tracer.event("prompt", {"message_count": 1})
     agent.tracer.end("ok")
-    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/workflow", "/run sandbox_info {}", "/unknown"]:
+    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/dream", "/dream apply --limit 2 --min-confidence 0.8", "/workflow", "/run sandbox_info {}", "/unknown"]:
         assert handle_command(agent, line) is True
     assert handle_command(agent, "/exit") is False
     output = capsys.readouterr().out
-    assert "Commands:" in output and "Sandbox root" in output and "Evolution audit" in output and "Evolution status" in output and "Unknown command" in output
+    assert "Commands:" in output and "Sandbox root" in output and "Evolution audit" in output and "Dream report" in output and "Evolution status" in output and "Unknown command" in output
 
 
 def test_cli_mcp_cmd_json_error_and_success(monkeypatch, capsys, temp_config):
@@ -310,6 +312,12 @@ def test_cli_optimize_cmd(monkeypatch, capsys, temp_config):
     assert "Daily optimization report" in capsys.readouterr().out
 
 
+def test_cli_dream_cmd_integration(monkeypatch, capsys, temp_config):
+    monkeypatch.setattr("evolva.cli.AgentConfig", lambda: temp_config)
+    assert dream_cmd(Namespace(apply=False, limit=5, report=None, min_confidence=None, json=False)) == 0
+    assert "Dream report" in capsys.readouterr().out
+
+
 def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, temp_config):
     monkeypatch.setattr("evolva.tui.AgentConfig", lambda: temp_config)
     app = EvolvaTUI(assume_yes=True, show_tools=True)
@@ -331,6 +339,8 @@ def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, t
     assert any("Evolution audit" in m.text for m in app.messages)
     app._handle_command("/evolve trace")
     assert any("Evolution analysis: trace" in m.text for m in app.messages)
+    app._handle_command("/dream")
+    assert any("Dream report" in m.text for m in app.messages)
     app._handle_command("/model")
     assert any("Current model" in m.text for m in app.messages)
     app._handle_command("/model tui-test-model")

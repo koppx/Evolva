@@ -82,6 +82,7 @@ Evolva is a composable, observable, and continuously improving Agent Harness. It
 | **Eval Harness** | JSONL tasks with text, regex, artifacts, memory, context, and tool-error checks | `python3 -m evolva.cli eval ...` |
 | **Guardrails / Sandbox** | Path sandbox, dangerous command denylist, risk scoring, secret detection, approvals | `/policy` |
 | **Self-Evolution** | Turns feedback, trace patterns, and eval failures into memory and skills | `python3 -m evolva.cli evolve ...` |
+| **Dreaming** | Local background reflection: Evidence → Hypothesis → Critique → Action, with auditable reports and optional high-confidence promotion | `python3 -m evolva.cli dream` |
 
 ## Architecture
 
@@ -104,6 +105,8 @@ Feedback / Trace Pattern / Eval Failure
         ↓
 Reflection
         ↓
+Dream Report
+        ↓
 Long-term Memory
         ↓
 Markdown Skill
@@ -118,9 +121,14 @@ python3 -m evolva.cli evolve audit --show-proposals
 python3 -m evolva.cli evolve feedback "After editing Python files, run syntax checks and pytest."
 python3 -m evolva.cli evolve trace --apply
 python3 -m evolva.cli evolve eval --apply
+python3 -m evolva.cli dream
+python3 -m evolva.cli dream --json
+python3 -m evolva.cli dream --apply --min-confidence 0.8
 ```
 
 The resulting lessons include **category / confidence / evidence / fingerprint**, are persisted in memory, and can be materialized as Markdown skills for future context injection. `evolve audit` summarizes lesson coverage, evolved skills, pending Trace/Eval proposals, and recommended next steps.
+
+`dream` is Evolva's local Dreaming loop. It is inspired by publicly observable background-reflection workflows, but remains fully local-first and does not require an extra cloud service or LLM. It scans recent traces, the latest eval report, and current Memory/Skill coverage, then runs **Evidence → Hypothesis → Critique → Action**: collect signals, generate falsifiable hypotheses, reject low-confidence/duplicate/weak-evidence items with deterministic drift guards, and write an auditable `evolva/dreams/*.json` report. With `--apply`, only high-confidence proposals pass through the Self-Evolution quality gate into Memory / Skill.
 
 ## Daily Commands
 
@@ -142,6 +150,11 @@ python3 -m evolva.cli chat
 
 # Eval
 python3 -m evolva.cli eval evals/tasks/smoke.jsonl --yes
+
+# Dream loop
+python3 -m evolva.cli dream
+python3 -m evolva.cli dream --json
+python3 -m evolva.cli dream --apply --min-confidence 0.8
 
 # Workflow
 python3 -m evolva.cli workflow path/to/workflow.json --yes
@@ -188,6 +201,9 @@ python3 -m evolva.cli evolve eval --apply
 /mcp tools [server]       List MCP tools
 /image <path|url> [text]  Ask with an image
 /evolve [feedback]        Turn feedback into memory + skill
+/dream                    Run an offline Dreaming reflection report
+/dream --min-confidence n  Tune the drift-guard confidence threshold
+/dream apply              Apply high-confidence Dreaming proposals
 /workflow <json>          Run a workflow spec
 /run <tool> <json>        Call a tool directly
 /exit                     Quit
@@ -264,6 +280,7 @@ evolva/
   tui.py                     curses terminal UI
   agent/core.py              public agent facade
   agent/langgraph_runtime.py LangGraph StateGraph runtime
+  agent/dream.py             offline Dream reflection loop
   agent/evolution.py         lesson + skill evolution engine
   agent/evolution_analyzer.py trace / eval evolution analyzer
   agent/images.py            local/URL image input

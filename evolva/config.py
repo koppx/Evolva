@@ -18,6 +18,7 @@ class AgentConfig:
     todo_file: Path = ROOT / "evolva" / "todo" / "todos.json"
     traces_dir: Path = ROOT / "evolva" / "traces"
     eval_results_dir: Path = ROOT / "evolva" / "eval_results"
+    dreams_dir: Path = ROOT / "evolva" / "dreams"
     workflows_dir: Path = ROOT / "evolva" / "workflows"
     mcp_config_file: Path = ROOT / "evolva" / "mcp" / "servers.json"
     repo_index_file: Path = ROOT / "evolva" / "repo_index" / "index.json"
@@ -37,6 +38,7 @@ class AgentConfig:
         self.todo_file.parent.mkdir(parents=True, exist_ok=True)
         self.traces_dir.mkdir(parents=True, exist_ok=True)
         self.eval_results_dir.mkdir(parents=True, exist_ok=True)
+        self.dreams_dir.mkdir(parents=True, exist_ok=True)
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
         self.mcp_config_file.parent.mkdir(parents=True, exist_ok=True)
         self.repo_index_file.parent.mkdir(parents=True, exist_ok=True)

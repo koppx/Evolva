@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from evolva.agent.context import ContextStore
+from evolva.agent.dream import DreamEngine
 from evolva.agent.evolution import SelfEvolutionEngine
 from evolva.agent.images import user_content_with_images
 from evolva.agent.llm import OpenAICompatibleLLM
@@ -66,6 +67,7 @@ class EvolvaAgent:
         self.mcp = MCPManager(self.config.mcp_config_file, root=self.config.root)
         self.llm = OpenAICompatibleLLM(self.config)
         self.coordinator = MultiAgentCoordinator(self.llm, self.memory, self.skills, self.todos)
+        self.evolution = SelfEvolutionEngine(self.memory, self.skills)
         self.tools: ToolRegistry = build_registry(
             self.sandbox,
             self.memory,
@@ -76,8 +78,8 @@ class EvolvaAgent:
             self.policy,
             self.mcp,
             self.config.repo_index_file,
+            self._run_dream_tool,
         )
-        self.evolution = SelfEvolutionEngine(self.memory, self.skills)
         self.graph_runtime = EvolvaLangGraphRuntime(self)
         self.assume_yes = assume_yes
         self.confirmer = confirmer
@@ -93,6 +95,12 @@ class EvolvaAgent:
         self.coordinator.llm = self.llm
         self.context.add("decision", f"Switched model to {model}", role="system", meta={"model": model})
         return model
+
+    def _run_dream_tool(self, limit: int = 20, apply: bool = False) -> tuple[str, dict[str, Any]]:
+        """Tool adapter for running the Dream loop from evals or agent actions."""
+        engine = DreamEngine(self)
+        report = engine.run(trace_limit=limit, apply=apply)
+        return engine.render(report), report.to_dict()
 
     def chat(self, user_message: str, image_sources: list[str] | None = None) -> TurnResult:
         self.tracer.start(

@@ -23,6 +23,7 @@ def temp_config(tmp_path: Path) -> AgentConfig:
         todo_file=base / "todo" / "todos.json",
         traces_dir=base / "traces",
         eval_results_dir=base / "eval_results",
+        dreams_dir=base / "dreams",
         workflows_dir=base / "workflows",
         mcp_config_file=base / "mcp" / "servers.json",
         repo_index_file=base / "repo_index" / "index.json",

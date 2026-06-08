@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from typing import Any
 
+from evolva.agent.dream import DreamEngine
 from evolva.agent.evolution_analyzer import EvalEvolutionAnalyzer, TraceEvolutionAnalyzer, apply_proposals, render_analysis, render_reports
 from evolva.agent.core import EvolvaAgent, TurnResult
 from evolva.config import AgentConfig
@@ -30,7 +31,7 @@ TUI keys:
   /exit          Quit
 
 Commands:
-  /help, /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp, /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /run <tool> <json>
+  /help, /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp, /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /dream [apply|--min-confidence n], /run <tool> <json>
 """.strip()
 
 
@@ -209,7 +210,7 @@ class EvolvaTUI:
         return None
 
     def _complete_command(self) -> None:
-        commands = ["/help", "/tools", "/skills", "/memory", "/context", "/todo", "/agents", "/trace", "/model", "/policy", "/repo", "/mcp", "/image", "/evolve", "/run", "/exit"]
+        commands = ["/help", "/tools", "/skills", "/memory", "/context", "/todo", "/agents", "/trace", "/model", "/policy", "/repo", "/mcp", "/image", "/evolve", "/dream", "/run", "/exit"]
         matches = [c for c in commands if c.startswith(self.input_text)]
         if len(matches) == 1:
             self.input_text = matches[0] + (" " if matches[0] not in {"/help", "/tools", "/skills", "/exit"} else "")
@@ -362,6 +363,23 @@ class EvolvaTUI:
                         f"动作：\n{actions}\n"
                         f"技能：{report.skill_name} ({report.skill_path})"
                     )
+            elif line.startswith("/dream"):
+                rest = line.removeprefix("/dream").strip()
+                parts = shlex.split(rest) if rest else []
+                apply = bool(parts and parts[0] in {"apply", "--apply"})
+                limit = 20
+                report_path = None
+                min_confidence = None
+                for idx, part in enumerate(parts):
+                    if part in {"--limit", "-n"} and idx + 1 < len(parts):
+                        limit = int(parts[idx + 1])
+                    elif part in {"--report", "-r"} and idx + 1 < len(parts):
+                        report_path = self.agent.sandbox.resolve(parts[idx + 1])
+                    elif part in {"--min-confidence", "--threshold"} and idx + 1 < len(parts):
+                        min_confidence = float(parts[idx + 1])
+                engine = DreamEngine(self.agent)
+                dream_report = engine.run(trace_limit=limit, eval_report=report_path, apply=apply, min_confidence=min_confidence)
+                self._add_system(engine.render(dream_report))
             elif line.startswith("/run"):
                 self.busy = True
                 self.status = "Running tool..."

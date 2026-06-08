@@ -5,6 +5,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from dataclasses import asdict
+from typing import Callable
 
 from evolva.agent.context import ContextStore
 from evolva.agent.memory import MemoryStore
@@ -28,6 +29,7 @@ def build_registry(
     policy: PolicyEngine | None = None,
     mcp: MCPManager | None = None,
     repo_index_file: Path | None = None,
+    dream_runner: Callable[[int, bool], tuple[str, dict]] | None = None,
 ) -> ToolRegistry:
     reg = ToolRegistry()
 
@@ -201,6 +203,12 @@ def build_registry(
         context.add("note", f"Multi-agent collaboration for `{task}`:\n{output}")
         return ToolResult(True, output)
 
+    def dream_report(limit: int = 20, apply: bool = False) -> ToolResult:
+        if dream_runner is None:
+            return ToolResult(False, "Dream runner is not configured")
+        output, data = dream_runner(int(limit), bool(apply))
+        return ToolResult(True, output, data)
+
     reg.register(Tool("list_files", "List files under the sandbox root", {"path": "str", "max_entries": "int"}, list_files))
     reg.register(Tool("read_file", "Read a UTF-8 text file under the sandbox root", {"path": "str", "max_chars": "int"}, read_file))
     reg.register(Tool("write_file", "Write or append a UTF-8 text file under the sandbox root", {"path": "str", "content": "str", "append": "bool"}, write_file))
@@ -228,4 +236,5 @@ def build_registry(
     reg.register(Tool("mcp_call", "Call an MCP tool via stdio JSON-RPC", {"server": "str", "tool": "str", "arguments": "dict"}, mcp_call, needs_confirmation=True))
     reg.register(Tool("delegate_agent", "Delegate a task to a role agent: planner, researcher, coder, reviewer", {"role": "str", "task": "str", "context_text": "str"}, delegate_agent))
     reg.register(Tool("collaborate", "Run a task through multiple role agents", {"task": "str", "roles": "list[str]", "context_text": "str"}, collaborate))
+    reg.register(Tool("dream_report", "Run the local dream reflection loop over trace/eval/evolution evidence", {"limit": "int", "apply": "bool"}, dream_report))
     return reg

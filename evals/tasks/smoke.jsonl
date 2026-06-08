@@ -1,1 +1,2 @@
 {"id":"fallback_memory_help_001","input":"remember senior agent interview needs observability eval guardrails workflow","expected_contains":["已记住"],"scorers":["no_tool_error"]}
+{"id":"dream_report_001","tool":"dream_report","args":{"limit":5},"expected_contains":["Dream report"],"scorers":["no_tool_error"]}

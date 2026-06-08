@@ -7,6 +7,7 @@ import sys
 from typing import Any
 
 from evolva.agent.core import EvolvaAgent
+from evolva.agent.dream import DreamEngine
 from evolva.agent.evolution_analyzer import EvalEvolutionAnalyzer, TraceEvolutionAnalyzer, apply_proposals, render_analysis, render_reports
 from evolva.config import AgentConfig
 from evolva.eval.harness import EvalHarness, render_results
@@ -47,6 +48,10 @@ Commands:
   /evolve eval [json]  Analyze eval failures for proposals
   /evolve apply-eval [json]
                        Analyze eval failures and apply proposals
+  /dream               Run offline trace/eval/memory reflection
+  /dream apply         Apply high-confidence dream proposals
+  /dream --min-confidence 0.8
+                       Raise the Dreaming drift-guard threshold
   /workflow <json>     Run a workflow spec file
   /run <tool> <json>   Call a tool directly
   /exit                Quit
@@ -193,6 +198,24 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
             f"动作：\n{actions}\n"
             f"技能：{report.skill_name} ({report.skill_path})"
         )
+        return True
+    if line.startswith("/dream"):
+        rest = line.removeprefix("/dream").strip()
+        parts = shlex.split(rest) if rest else []
+        apply = bool(parts and parts[0] in {"apply", "--apply"})
+        limit = 20
+        report_path = None
+        min_confidence = None
+        for idx, part in enumerate(parts):
+            if part in {"--limit", "-n"} and idx + 1 < len(parts):
+                limit = int(parts[idx + 1])
+            elif part in {"--report", "-r"} and idx + 1 < len(parts):
+                report_path = agent.sandbox.resolve(parts[idx + 1])
+            elif part in {"--min-confidence", "--threshold"} and idx + 1 < len(parts):
+                min_confidence = float(parts[idx + 1])
+        engine = DreamEngine(agent)
+        report = engine.run(trace_limit=limit, eval_report=report_path, apply=apply, min_confidence=min_confidence)
+        print(engine.render(report))
         return True
     if line.startswith("/workflow"):
         path = line.removeprefix("/workflow").strip()
@@ -359,6 +382,18 @@ def optimize_cmd(args: argparse.Namespace) -> int:
     return 0
 
 
+def dream_cmd(args: argparse.Namespace) -> int:
+    agent = EvolvaAgent(AgentConfig(), assume_yes=True)
+    report_path = args.report
+    engine = DreamEngine(agent)
+    report = engine.run(trace_limit=args.limit, eval_report=report_path, apply=args.apply, min_confidence=args.min_confidence)
+    if args.json:
+        print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+    else:
+        print(engine.render(report))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="evolva")
     sub = parser.add_subparsers(dest="cmd", required=False)
@@ -424,6 +459,14 @@ def build_parser() -> argparse.ArgumentParser:
     optimize_p.add_argument("--apply", action="store_true", help="Apply conservative auto-fixes such as stale badge updates and local cache cleanup")
     optimize_p.add_argument("--fail-on-items", action="store_true", help="Exit non-zero when medium/high unfixed items remain")
     optimize_p.set_defaults(func=optimize_cmd)
+
+    dream_p = sub.add_parser("dream", help="Run Evolva's local trace/eval/memory reflection loop")
+    dream_p.add_argument("--apply", action="store_true", help="Apply high-confidence proposals as Memory/Skill lessons")
+    dream_p.add_argument("--limit", type=int, default=20, help="Recent trace run limit")
+    dream_p.add_argument("--report", type=lambda s: __import__("pathlib").Path(s), help="Eval report JSON; defaults to latest")
+    dream_p.add_argument("--min-confidence", type=float, default=None, help="Minimum confidence for automatic Dreaming promotion")
+    dream_p.add_argument("--json", action="store_true", help="Print the full Dream report JSON")
+    dream_p.set_defaults(func=dream_cmd)
 
     workflow_p = sub.add_parser("workflow", help="Run a JSON workflow spec")
     workflow_p.add_argument("spec", type=lambda s: __import__("pathlib").Path(s))
