@@ -75,12 +75,6 @@ evolva
 /evolve audit                           # 查看自进化覆盖
 ```
 
-保留少量脚本化入口用于 CI、自动化和一次性任务：
-
-```bash
-evolva eval evals/tasks/smoke.jsonl --yes
-evolva dream --json
-```
 
 未配置 `OPENAI_API_KEY` 时，Evolva 会进入有限规则模式；本地工具、记忆、技能、Todo、Trace、Workflow、Eval 等基础能力仍可离线运行，便于测试与二次开发。
 
@@ -178,12 +172,7 @@ TUI 内常用路径：
 /dream --min-confidence 0.8           运行 Dreaming 防漂移分析
 ```
 
-脚本化/CI 入口仅用于自动化与回归基线：
-
-```bash
-evolva eval evals/tasks/smoke.jsonl --yes
-evolva dream --json
-```
+> 日常入口只需要记住 `evolva`。下面两个命令是给维护者和 CI 使用的自动化接口：`evolva eval ...` 用来跑 JSONL 回归评测，`evolva dream --json` 用来导出机器可读的 Dreaming 分析报告。
 
 <details>
 <summary><strong>交互式 Slash Commands</strong></summary>

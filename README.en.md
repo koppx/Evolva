@@ -63,12 +63,6 @@ Inside the TUI, use Slash Commands:
 /evolve audit
 ```
 
-A small set of scriptable commands remains available for CI and automation:
-
-```bash
-evolva eval evals/tasks/smoke.jsonl --yes
-evolva dream --json
-```
 
 Without `OPENAI_API_KEY`, Evolva falls back to a limited local rule-based mode. Local tools, memory, skills, todo, traces, workflows, and evals remain available for offline testing and extension.
 
@@ -174,12 +168,7 @@ Common TUI flows:
 /dream --min-confidence 0.8           Run Dreaming drift-guard analysis
 ```
 
-Scriptable/CI entries are kept for automation and regression baselines:
-
-```bash
-evolva eval evals/tasks/smoke.jsonl --yes
-evolva dream --json
-```
+> For daily use, remember only `evolva`. The scriptable interface is for maintainers and CI: `evolva eval ...` runs JSONL regression evals, and `evolva dream --json` exports a machine-readable Dreaming report.
 
 <details>
 <summary><strong>Interactive Slash Commands</strong></summary>
