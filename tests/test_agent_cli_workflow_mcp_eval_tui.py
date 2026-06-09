@@ -487,3 +487,32 @@ def test_tui_status_bar_avoids_duplicate_ready(monkeypatch, temp_config):
     assert status.startswith("READY")
     assert "READY  Ready" not in status
     assert "rule-mode" in status and "tools:on" in status
+
+
+def test_tui_draws_polished_shell(monkeypatch, temp_config):
+    monkeypatch.setattr("evolva.tui.AgentConfig", lambda: temp_config)
+    app = EvolvaTUI(assume_yes=True, show_tools=True)
+    writes = []
+
+    class FakeScreen:
+        def addnstr(self, y, x, text, width, attr=None):
+            writes.append(str(text))
+
+        def addch(self, y, x, ch, attr=None):
+            writes.append(str(ch))
+
+        def move(self, y, x):
+            pass
+
+    app.stdscr = FakeScreen()
+    app._draw_title(0, 100)
+    app._draw_chat(3, 0, 16, 70)
+    app._draw_tools(3, 70, 16, 30)
+    app._draw_input(20, 100)
+    rendered = "\n".join(writes)
+    assert "EVOLVA  Agent Workbench" in rendered
+    assert "Memory · Skills · MCP · Trace · Dream" in rendered
+    assert "Evolva is a local-first Agent Harness." in rendered
+    assert "Tool Stream" in rendered
+    assert "No tool calls yet." in rendered
+    assert "You ›" in rendered

@@ -89,9 +89,9 @@ class EvolvaTUI:
         self._init_colors()
         stdscr.keypad(True)
         stdscr.timeout(100)
-        self._add_system("Evolva TUI started. Type /help for commands, /exit to quit.")
+        self._add_system("Evolva Workbench is ready. Type /help for commands, /exit to quit.")
         if not self.agent.llm.available:
-            self._add_system("未检测到 OPENAI_API_KEY，当前使用有限规则模式。")
+            self._add_system("未检测到 OPENAI_API_KEY，已进入 local rule-mode；本地工具、Trace、Memory、Dream 仍可使用。")
 
         while True:
             self._drain_queue()
@@ -119,6 +119,8 @@ class EvolvaTUI:
             curses.init_pair(3, curses.COLOR_YELLOW, -1)  # system/status
             curses.init_pair(4, curses.COLOR_MAGENTA, -1) # tools
             curses.init_pair(5, curses.COLOR_RED, -1)     # errors
+            curses.init_pair(6, curses.COLOR_BLUE, -1)    # panel chrome
+            curses.init_pair(7, curses.COLOR_WHITE, -1)   # muted text
         except (curses.error, ValueError):
             # Some pseudo terminals support curses drawing but not color pairs.
             # Keep TUI startup resilient and fall back to A_NORMAL rendering.
@@ -561,42 +563,48 @@ class EvolvaTUI:
         stdscr = self.stdscr
         stdscr.erase()
         h, w = stdscr.getmaxyx()
-        if h < 8 or w < 40:
-            stdscr.addnstr(0, 0, "Terminal too small for Evolva TUI", max(0, w - 1))
+        if h < 10 or w < 50:
+            stdscr.addnstr(0, 0, "Terminal too small for Evolva Workbench", max(0, w - 1))
             stdscr.refresh()
             return
 
-        input_h = 3
+        input_h = 4
         status_h = 1
-        title_h = 1
+        title_h = 3
         body_h = h - input_h - status_h - title_h
-        tool_w = min(48, max(30, w // 3)) if self.show_tools and w >= 90 else 0
+        tool_w = min(46, max(32, w // 3)) if self.show_tools and w >= 96 else 0
         chat_w = w - tool_w
 
         self._draw_title(0, w)
-        self._draw_chat(1, 0, body_h, chat_w)
+        self._draw_chat(title_h, 0, body_h, chat_w)
         if tool_w:
-            self._draw_tools(1, chat_w, body_h, tool_w)
+            self._draw_tools(title_h, chat_w, body_h, tool_w)
         self._draw_status(h - input_h - status_h, w)
         self._draw_input(h - input_h, w)
         stdscr.refresh()
 
     def _draw_title(self, y: int, w: int) -> None:
         model = self.agent.config.model if self.agent.llm.available else "rule-mode"
-        title = f" Evolva TUI | model={model} | F2 model | Ctrl+R traces | Ctrl+X ctx | Ctrl+T tools | /help "
-        self.stdscr.attron(self._color(3, curses.A_BOLD))
-        self.stdscr.addnstr(y, 0, title.ljust(w), w - 1)
-        self.stdscr.attroff(self._color(3, curses.A_BOLD))
+        mode = "LLM" if self.agent.llm.available else "LOCAL"
+        title = " EVOLVA  Agent Workbench "
+        meta = f" {mode} · {model} · Memory · Skills · MCP · Trace · Dream "
+        keys = " F2 model  ^R traces  ^X context  ^T tools  /help "
+        self.stdscr.addnstr(y, 0, title.ljust(w), w - 1, self._color(3, curses.A_BOLD | curses.A_REVERSE))
+        self.stdscr.addnstr(y + 1, 0, meta.ljust(w), w - 1, self._color(7))
+        self.stdscr.addnstr(y + 2, 0, keys.ljust(w), w - 1, self._color(6))
 
     def _draw_chat(self, y: int, x: int, h: int, w: int) -> None:
         lines: list[tuple[str, int]] = []
         for msg in self.messages:
             color = self._role_color(msg.role)
-            prefix = f"[{msg.ts}] {msg.role}: "
+            prefix = f"{self._role_label(msg.role)} {msg.ts} "
             wrapped = self._wrap(prefix + msg.text, max(10, w - 2))
             for part in wrapped:
                 lines.append((part, color))
             lines.append(("", 0))
+        if not lines:
+            self._draw_empty_chat(y, x, h, w)
+            return
         visible = lines[max(0, len(lines) - h - self.scroll) : max(0, len(lines) - self.scroll) if self.scroll else len(lines)]
         start = max(0, h - len(visible))
         for idx, (line, color) in enumerate(visible[-h:]):
@@ -608,16 +616,18 @@ class EvolvaTUI:
 
     def _draw_tools(self, y: int, x: int, h: int, w: int) -> None:
         for row in range(h):
-            self.stdscr.addch(y + row, x, curses.ACS_VLINE)
-        title = " Tool Logs "
-        self.stdscr.addnstr(y, x + 1, title.ljust(w - 2), w - 2, self._color(4, curses.A_BOLD))
+            self._safe_addch(y + row, x, getattr(curses, "ACS_VLINE", "│"), self._color(6))
+        title = " Tool Stream "
+        self.stdscr.addnstr(y, x + 2, title.ljust(w - 3), w - 3, self._color(4, curses.A_BOLD))
         raw_lines: list[str] = []
         for log in self.tool_logs[-20:]:
             raw_lines.extend(self._wrap(log, max(10, w - 3)))
             raw_lines.append("-" * max(1, w - 3))
+        if not raw_lines:
+            raw_lines = ["No tool calls yet.", "", "Run /tools, /mcp, /repo", "or ask Evolva to act."]
         visible = raw_lines[-(h - 1) :]
         for i, line in enumerate(visible, start=1):
-            self.stdscr.addnstr(y + i, x + 1, line.ljust(w - 2), w - 2, self._color(4))
+            self.stdscr.addnstr(y + i, x + 2, line.ljust(w - 3), w - 3, self._color(4 if self.tool_logs else 7))
 
     def _draw_status(self, y: int, w: int) -> None:
         left = " BUSY " if self.busy else " READY "
@@ -626,19 +636,22 @@ class EvolvaTUI:
         else:
             model = self.agent.config.model if self.agent.llm.available else "rule-mode"
             tools = "tools:on" if self.show_tools else "tools:off"
-            detail = f"{model} · {tools} · /help"
+            detail = f"{model} · {tools} · trace:{len(self.agent.tracer.list_runs(limit=1))} · /help"
         status = f"{left} {detail}"
         self.stdscr.addnstr(y, 0, status.ljust(w), w - 1, self._color(3, curses.A_REVERSE))
 
     def _draw_input(self, y: int, w: int) -> None:
-        prompt = "You> "
-        self.stdscr.addnstr(y, 0, prompt, w - 1, curses.A_BOLD)
+        self.stdscr.addnstr(y, 0, "─" * max(0, w - 1), w - 1, self._color(6))
+        prompt = "  You › "
+        self.stdscr.addnstr(y + 1, 0, prompt, w - 1, self._color(1, curses.A_BOLD))
         width = max(1, w - len(prompt) - 1)
         display = self.input_text[-width:]
-        self.stdscr.addnstr(y, len(prompt), display.ljust(width), width)
-        self.stdscr.move(y, min(w - 2, len(prompt) + len(display)))
-        hint = "Enter send | Tab complete | F2 model | Ctrl+R traces | Ctrl+X trace ctx | Esc clear"
-        self.stdscr.addnstr(y + 1, 0, hint.ljust(w), w - 1, self._color(3))
+        placeholder = "Ask, run /dream, inspect /trace, or type /help" if not display else display
+        attr = curses.A_NORMAL if display else self._color(7)
+        self.stdscr.addnstr(y + 1, len(prompt), placeholder.ljust(width), width, attr)
+        self.stdscr.move(y + 1, min(w - 2, len(prompt) + len(display)))
+        hint = "  Enter send · Tab complete · Esc clear · PgUp/PgDn scroll · Ctrl+T tools"
+        self.stdscr.addnstr(y + 2, 0, hint.ljust(w), w - 1, self._color(7))
 
     def _wrap(self, text: str, width: int) -> list[str]:
         out: list[str] = []
@@ -651,6 +664,31 @@ class EvolvaTUI:
 
     def _role_color(self, role: str) -> int:
         return {"You": 1, "Agent": 2, "System": 3, "Error": 5}.get(role, 0)
+
+    def _role_label(self, role: str) -> str:
+        return {"You": "YOU", "Agent": "EVA", "System": "SYS", "Error": "ERR"}.get(role, role.upper())
+
+    def _draw_empty_chat(self, y: int, x: int, h: int, w: int) -> None:
+        cards = [
+            "Evolva is a local-first Agent Harness.",
+            "",
+            "Try:",
+            "  /dream             inspect self-evolution candidates",
+            "  /trace list        inspect recent runs",
+            "  /mcp               manage MCP servers",
+            "  /repo search agent search the indexed codebase",
+        ]
+        start = y + max(0, (h - len(cards)) // 2)
+        left = x + max(2, (w - 58) // 2)
+        for idx, line in enumerate(cards[:h]):
+            attr = self._color(3, curses.A_BOLD) if idx == 0 else self._color(7)
+            self.stdscr.addnstr(start + idx, left, line[: max(1, w - left - 1)], max(1, w - left - 1), attr)
+
+    def _safe_addch(self, y: int, x: int, ch: Any, attr: int = 0) -> None:
+        try:
+            self.stdscr.addch(y, x, ch, attr)
+        except curses.error:
+            pass
 
 
 def run_tui(assume_yes: bool = False, show_tools: bool = True) -> int:
