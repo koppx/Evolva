@@ -106,6 +106,10 @@ Evolva is organized into three lanes:
 
 ## Self-Evolution
 
+<p align="center">
+  <img src="assets/evolva-dreaming-loop.jpeg" alt="Evolva Dreaming Loop" width="100%" />
+</p>
+
 Evolva's evolution loop is a concrete state update pipeline:
 
 ```text

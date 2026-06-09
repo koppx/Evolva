@@ -110,6 +110,10 @@ Evolva 的架构围绕三条主线展开：
 
 ## 自我进化：从运行证据到能力资产
 
+<p align="center">
+  <img src="assets/evolva-dreaming-loop.jpeg" alt="Evolva Dreaming Loop" width="100%" />
+</p>
+
 Evolva 的自我进化是一条可检查、可回放、可审计的状态更新链路：
 
 ```text
