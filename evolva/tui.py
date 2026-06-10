@@ -16,6 +16,7 @@ from evolva.agent.dream import DreamEngine
 from evolva.agent.evolution_analyzer import EvalEvolutionAnalyzer, TraceEvolutionAnalyzer, apply_proposals, render_analysis, render_reports
 from evolva.agent.core import EvolvaAgent, TurnResult
 from evolva.config import AgentConfig
+from evolva.loops import LoopRunner, render_loop_result, render_loop_specs
 
 
 TUI_HELP = """
@@ -32,7 +33,7 @@ TUI keys:
   /exit          Quit
 
 Commands:
-  /help, /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp [add|remove|tools], /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /dream [backlog|verify|apply|--min-confidence n], /run <tool> <json>
+  /help, /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp [add|remove|tools], /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /dream [backlog|verify|apply|--min-confidence n], /loop [list|show|run], /run <tool> <json>
 """.strip()
 
 
@@ -256,7 +257,7 @@ class EvolvaTUI:
         return isinstance(ch, int) and ch in keys
 
     def _complete_command(self) -> None:
-        commands = ["/help", "/tools", "/skills", "/memory", "/context", "/todo", "/agents", "/trace", "/model", "/policy", "/repo", "/mcp", "/image", "/evolve", "/dream", "/run", "/exit"]
+        commands = ["/help", "/tools", "/skills", "/memory", "/context", "/todo", "/agents", "/trace", "/model", "/policy", "/repo", "/mcp", "/image", "/evolve", "/dream", "/loop", "/run", "/exit"]
         matches = [c for c in commands if c.startswith(self.input_text)]
         if len(matches) == 1:
             self.input_text = matches[0] + (" " if matches[0] not in {"/help", "/tools", "/skills", "/exit"} else "")
@@ -449,6 +450,21 @@ class EvolvaTUI:
                         min_confidence = float(parts[idx + 1])
                 dream_report = engine.run(trace_limit=limit, eval_report=report_path, apply=apply, min_confidence=min_confidence)
                 self._add_system(engine.render(dream_report))
+            elif line.startswith("/loop"):
+                rest = line.removeprefix("/loop").strip()
+                runner = LoopRunner(self.agent)
+                if rest in {"", "list"}:
+                    self._add_system(render_loop_specs(runner.list_specs()))
+                elif rest.startswith("show "):
+                    spec = runner.load(rest.removeprefix("show ").strip())
+                    self._add_system(json.dumps(spec.to_dict(), ensure_ascii=False, indent=2))
+                elif rest.startswith("run "):
+                    self.busy = True
+                    self.status = "Running loop..."
+                    thread = threading.Thread(target=self._worker_loop, args=(rest.removeprefix("run ").strip(),), daemon=True)
+                    thread.start()
+                else:
+                    self._add_system("Usage: /loop list | /loop show <loop_id|path> | /loop run <loop_id|path>")
             elif line.startswith("/run"):
                 self.busy = True
                 self.status = "Running tool..."
@@ -515,6 +531,13 @@ class EvolvaTUI:
         except Exception as exc:
             self.queue.put(("error", f"Tool error: {exc}"))
 
+    def _worker_loop(self, loop_id: str) -> None:
+        try:
+            result = LoopRunner(self.agent).run(loop_id)
+            self.queue.put(("loop_result", result))
+        except Exception as exc:
+            self.queue.put(("error", f"Loop error: {exc}"))
+
     def _drain_queue(self) -> None:
         while True:
             try:
@@ -533,6 +556,12 @@ class EvolvaTUI:
                 prefix = f"TOOL {name} -> ok={ok}"
                 self.tool_logs.append(prefix + "\n" + output)
                 self._add_system(prefix + "\n" + output)
+                self.busy = False
+                self.status = "Ready"
+            elif kind == "loop_result":
+                rendered = render_loop_result(payload)
+                self.tool_logs.append(rendered)
+                self._add_system(rendered)
                 self.busy = False
                 self.status = "Ready"
             elif kind == "system":
@@ -587,8 +616,8 @@ class EvolvaTUI:
         model = self.agent.config.model if self.agent.llm.available else "rule-mode"
         mode = "LLM" if self.agent.llm.available else "LOCAL"
         title = " EVOLVA  Agent Workbench "
-        meta = f" {mode} · {model} · Memory · Skills · MCP · Trace · Dream "
-        keys = " F2 model  ^R traces  ^X context  ^T tools  /help "
+        meta = f" {mode} · {model} · Memory · Skills · MCP · Trace · Dream · Loop "
+        keys = " F2 model  ^R traces  ^X context  ^T tools  /loop list  /help "
         self.stdscr.addnstr(y, 0, title.ljust(w), w - 1, self._color(3, curses.A_BOLD | curses.A_REVERSE))
         self.stdscr.addnstr(y + 1, 0, meta.ljust(w), w - 1, self._color(7))
         self.stdscr.addnstr(y + 2, 0, keys.ljust(w), w - 1, self._color(6))
@@ -646,7 +675,7 @@ class EvolvaTUI:
         self.stdscr.addnstr(y + 1, 0, prompt, w - 1, self._color(1, curses.A_BOLD))
         width = max(1, w - len(prompt) - 1)
         display = self.input_text[-width:]
-        placeholder = "Ask, run /dream, inspect /trace, or type /help" if not display else display
+        placeholder = "Ask, run /loop, inspect /trace, or type /help" if not display else display
         attr = curses.A_NORMAL if display else self._color(7)
         self.stdscr.addnstr(y + 1, len(prompt), placeholder.ljust(width), width, attr)
         self.stdscr.move(y + 1, min(w - 2, len(prompt) + len(display)))
@@ -673,6 +702,7 @@ class EvolvaTUI:
             "Evolva is a local-first Agent Harness.",
             "",
             "Try:",
+            "  /loop list         inspect repeatable agent loops",
             "  /dream             inspect self-evolution candidates",
             "  /trace list        inspect recent runs",
             "  /mcp               manage MCP servers",

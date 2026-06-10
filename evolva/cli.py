@@ -11,6 +11,7 @@ from evolva.agent.dream import DreamEngine
 from evolva.agent.evolution_analyzer import EvalEvolutionAnalyzer, TraceEvolutionAnalyzer, apply_proposals, render_analysis, render_reports
 from evolva.config import AgentConfig
 from evolva.eval.harness import EvalHarness, render_gate, render_results
+from evolva.loops import LoopRunner, render_loop_result, render_loop_specs
 from evolva.maintenance.optimizer import run_daily_optimization
 from evolva.tui import run_tui
 from evolva.workflow.engine import WorkflowEngine
@@ -57,6 +58,9 @@ Commands:
   /dream apply         Apply high-confidence dream proposals
   /dream --min-confidence 0.8
                        Raise the Dreaming drift-guard threshold
+  /loop list           List repeatable agent loops
+  /loop show <loop>    Show a loop spec
+  /loop run <loop>     Run a loop and record trace evidence
   /workflow <json>     Run a workflow spec file
   /run <tool> <json>   Call a tool directly
   /exit                Quit
@@ -244,6 +248,21 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
                 min_confidence = float(parts[idx + 1])
         report = engine.run(trace_limit=limit, eval_report=report_path, apply=apply, min_confidence=min_confidence)
         print(engine.render(report))
+        return True
+    if line.startswith("/loop"):
+        rest = line.removeprefix("/loop").strip()
+        runner = LoopRunner(agent)
+        if rest in {"", "list"}:
+            print(render_loop_specs(runner.list_specs()))
+            return True
+        if rest.startswith("show "):
+            spec = runner.load(rest.removeprefix("show ").strip())
+            print(json.dumps(spec.to_dict(), ensure_ascii=False, indent=2))
+            return True
+        if rest.startswith("run "):
+            print(render_loop_result(runner.run(rest.removeprefix("run ").strip())))
+            return True
+        print("Usage: /loop list | /loop show <loop_id|path> | /loop run <loop_id|path>")
         return True
     if line.startswith("/workflow"):
         path = line.removeprefix("/workflow").strip()
@@ -449,6 +468,26 @@ def dream_cmd(args: argparse.Namespace) -> int:
     return 0
 
 
+def loop_cmd(args: argparse.Namespace) -> int:
+    agent = EvolvaAgent(AgentConfig(), assume_yes=args.yes)
+    runner = LoopRunner(agent)
+    if args.loop_cmd == "list":
+        print(render_loop_specs(runner.list_specs()))
+        return 0
+    if args.loop_cmd == "show":
+        spec = runner.load(args.loop_id)
+        print(json.dumps(spec.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    if args.loop_cmd == "run":
+        result = runner.run(args.loop_id)
+        if args.json:
+            print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(render_loop_result(result))
+        return 0 if result.ok else 1
+    raise SystemExit("unknown loop command")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="evolva",
@@ -457,7 +496,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chat", action="store_true", help="Start plain line-based chat instead of the default TUI")
     parser.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting in default TUI mode")
     parser.add_argument("--no-tools", action="store_true", help="Hide the TUI tool log panel at startup")
-    sub = parser.add_subparsers(dest="cmd", required=False, metavar="{ask,trace,eval,evolve,optimize,dream,workflow,mcp}")
+    sub = parser.add_subparsers(dest="cmd", required=False, metavar="{ask,trace,eval,evolve,optimize,dream,loop,workflow,mcp}")
     once_p = sub.add_parser("ask", help="Automation: ask one question and exit")
     once_p.add_argument("message")
     once_p.add_argument("--image", action="append", help="Attach an image path or URL; can be repeated")
@@ -531,6 +570,19 @@ def build_parser() -> argparse.ArgumentParser:
     dream_p.add_argument("--min-confidence", type=float, default=None, help="Minimum confidence for automatic Dreaming promotion")
     dream_p.add_argument("--json", action="store_true", help="Print the full Dream report JSON")
     dream_p.set_defaults(func=dream_cmd)
+
+    loop_p = sub.add_parser("loop", help="Automation: run repeatable agent loops; in daily use prefer TUI /loop")
+    loop_p.add_argument("--yes", action="store_true", help="Approve shell/python tools during loop runs")
+    loop_sub = loop_p.add_subparsers(dest="loop_cmd", required=True)
+    loop_list = loop_sub.add_parser("list", help="List built-in and workspace loops")
+    loop_list.set_defaults(func=loop_cmd)
+    loop_show = loop_sub.add_parser("show", help="Show one loop spec as JSON")
+    loop_show.add_argument("loop_id")
+    loop_show.set_defaults(func=loop_cmd)
+    loop_run = loop_sub.add_parser("run", help="Run a loop by ID or JSON path")
+    loop_run.add_argument("loop_id")
+    loop_run.add_argument("--json", action="store_true", help="Print run result JSON")
+    loop_run.set_defaults(func=loop_cmd)
 
     workflow_p = sub.add_parser("workflow", help="Automation: run a JSON workflow spec")
     workflow_p.add_argument("spec", type=lambda s: __import__("pathlib").Path(s))

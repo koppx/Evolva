@@ -11,7 +11,7 @@ from evolva.agent.core import EvolvaAgent, SYSTEM_PROMPT
 from evolva.agent.mcp import MCPClient, MCPManager, MCPServerConfig, render_mcp_result
 from evolva.agent.multi_agent import MultiAgentCoordinator
 from evolva.agent.tracing import TraceRecorder
-from evolva.cli import build_parser, dream_cmd, evolve_cmd, handle_command, main, mcp_cmd, once, optimize_cmd
+from evolva.cli import build_parser, dream_cmd, evolve_cmd, handle_command, loop_cmd, main, mcp_cmd, once, optimize_cmd
 from evolva.eval.harness import EvalHarness, EvalResult, render_gate, render_results
 from evolva.tui import EvolvaTUI, TUIConfirmation
 from evolva.workflow.engine import WorkflowEngine
@@ -302,6 +302,8 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     assert parser.parse_args(["dream", "--min-confidence", "0.8", "--json"]).json
     assert parser.parse_args(["dream", "backlog", "--limit", "3"]).dream_cmd == "backlog"
     assert parser.parse_args(["dream", "verify", "--promote", "--json"]).dream_cmd == "verify"
+    assert parser.parse_args(["loop", "list"]).loop_cmd == "list"
+    assert parser.parse_args(["loop", "--yes", "run", "dream-loop", "--json"]).json
 
     monkeypatch.setattr("evolva.cli.AgentConfig", lambda: temp_config)
     assert once(Namespace(message="remember cli", image=None, yes=True, show_tools=False)) == 0
@@ -331,7 +333,7 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     run_id = agent.tracer.start("cli context")
     agent.tracer.event("prompt", {"message_count": 1})
     agent.tracer.end("ok")
-    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp add cli-demo python3 server.py --flag", "/mcp remove cli-demo", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/dream", "/dream backlog", "/dream verify", "/dream apply --limit 2 --min-confidence 0.8", "/workflow", "/run sandbox_info {}", "/unknown"]:
+    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp add cli-demo python3 server.py --flag", "/mcp remove cli-demo", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/dream", "/dream backlog", "/dream verify", "/dream apply --limit 2 --min-confidence 0.8", "/loop list", "/loop show dream-loop", "/workflow", "/run sandbox_info {}", "/unknown"]:
         assert handle_command(agent, line) is True
     assert handle_command(agent, "/exit") is False
     output = capsys.readouterr().out
@@ -397,6 +399,12 @@ def test_cli_dream_cmd_integration(monkeypatch, capsys, temp_config):
     assert "Dream report" in capsys.readouterr().out
 
 
+def test_cli_loop_cmd_integration(monkeypatch, capsys, temp_config):
+    monkeypatch.setattr("evolva.cli.AgentConfig", lambda: temp_config)
+    assert loop_cmd(Namespace(loop_cmd="list", yes=True)) == 0
+    assert "dream-loop" in capsys.readouterr().out
+
+
 def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, temp_config):
     monkeypatch.setattr("evolva.tui.AgentConfig", lambda: temp_config)
     app = EvolvaTUI(assume_yes=True, show_tools=True)
@@ -424,6 +432,8 @@ def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, t
     assert any("Dream backlog" in m.text for m in app.messages)
     app._handle_command("/dream verify")
     assert any("Dream verification" in m.text for m in app.messages)
+    app._handle_command("/loop list")
+    assert any("dream-loop" in m.text for m in app.messages)
     app._handle_command("/model")
     assert any("Current model" in m.text for m in app.messages)
     app._handle_command("/model tui-test-model")
@@ -511,7 +521,7 @@ def test_tui_draws_polished_shell(monkeypatch, temp_config):
     app._draw_input(20, 100)
     rendered = "\n".join(writes)
     assert "EVOLVA  Agent Workbench" in rendered
-    assert "Memory · Skills · MCP · Trace · Dream" in rendered
+    assert "Memory · Skills · MCP · Trace · Dream · Loop" in rendered
     assert "Evolva is a local-first Agent Harness." in rendered
     assert "Tool Stream" in rendered
     assert "No tool calls yet." in rendered
