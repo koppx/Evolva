@@ -5,12 +5,6 @@
 <h1 align="center">Evolva</h1>
 
 <p align="center">
-  <a href="https://github.com/koppx/Evolva/stargazers">
-    <img alt="GitHub stars" src="https://img.shields.io/github/stars/koppx/Evolva?style=social" />
-  </a>
-</p>
-
-<p align="center">
   <strong>Production-grade · Local-first · Self-Evolving Agent Harness</strong><br />
   面向真实工程场景的 Agent 运行底座：把仓库理解、工具执行、Trace 回放、Eval 基准、Guardrails 与自我进化收敛到一个可审计的闭环。
 </p>
@@ -20,6 +14,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/koppx/Evolva/stargazers">
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/koppx/Evolva?style=for-the-badge&logo=github&label=Stars&color=EAD58B&labelColor=0B0B0F" />
+  </a>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-FFF0B3?style=for-the-badge&labelColor=0B0B0F" />
   <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-Runtime-D6A84F?style=for-the-badge&labelColor=0B0B0F" />
   <img alt="TUI-first" src="https://img.shields.io/badge/TUI--first-Workbench-EAD58B?style=for-the-badge&labelColor=0B0B0F" />
