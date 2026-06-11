@@ -586,10 +586,10 @@ def test_tui_draws_polished_shell(monkeypatch, temp_config):
     app._draw_tools(6, 70, 16, 30)
     app._draw_input(20, 100)
     rendered = "\n".join(writes)
-    assert "Evolva v" in rendered
+    assert "E V O L A" in rendered
     assert "local_rule-mode" in rendered
     assert "pytest-of-bytedance" in rendered
-    assert "██╗   ██╗" in rendered
+    assert "╭───────●" in rendered
     assert "Trace / Tool Stream" in rendered
     assert "No tool calls yet." in rendered
     assert "What's on your mind?" in rendered

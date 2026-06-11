@@ -753,7 +753,7 @@ class EvolvaTUI:
 
         input_h = 3
         status_h = 1
-        title_h = 6
+        title_h = 7
         body_h = h - input_h - status_h - title_h
         tool_w = min(42, max(32, w // 3)) if self.show_tools and self.tool_logs and w >= 120 else 0
         chat_w = w - tool_w
@@ -768,12 +768,12 @@ class EvolvaTUI:
 
     def _draw_title(self, y: int, w: int) -> None:
         icon = [
-            "██╗   ██╗",
-            "██║   ██║",
-            "╚██╗ ██╔╝",
-            " ╚████╔╝ ",
-            "  ╚██╔╝  ",
-            "   ╚═╝   ",
+            "╭───────●",
+            "│  ╭───●",
+            "│  ╰───●",
+            "●──╮",
+            "│  ╰───●",
+            "╰───────●",
         ]
         brand_x = 2 if w >= 72 else 1
         text_x = 20 if w >= 72 else 14
@@ -781,14 +781,14 @@ class EvolvaTUI:
         model = self._model_label()
         provider = self._provider_label()
         cwd = self._path_label(max(12, w - text_x - 2))
-        title = f"Evolva v{version}"
+        title = f"E V O L A  v{version}"
         subtitle = f"{provider}_{model}" if provider != "local rule-mode" else "local_rule-mode"
         for idx, row in enumerate(icon):
             self.stdscr.addnstr(y + idx, brand_x, row[: max(1, w - brand_x - 1)], max(1, w - brand_x - 1), self._color(8, curses.A_BOLD))
         self.stdscr.addnstr(y + 1, text_x, title[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(8, curses.A_BOLD))
         self.stdscr.addnstr(y + 2, text_x, subtitle[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(7))
         self.stdscr.addnstr(y + 3, text_x, cwd[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(7))
-        self.stdscr.addnstr(y + 5, 0, "─" * max(0, w - 1), w - 1, self._color(8))
+        self.stdscr.addnstr(y + 6, 0, "─" * max(0, w - 1), w - 1, self._color(8))
 
     def _draw_chat(self, y: int, x: int, h: int, w: int) -> None:
         lines: list[tuple[str, int]] = []
@@ -995,9 +995,9 @@ class EvolvaInlineTUI:
         model = self.app._model_label()
         subtitle = f"{provider}_{model}" if provider != "local rule-mode" else "local_rule-mode"
         cwd = self.app._path_label(96)
-        icon = ["██╗   ██╗", "██║   ██║", "╚██╗ ██╔╝", " ╚████╔╝ ", "  ╚██╔╝  ", "   ╚═╝   "]
+        icon = ["╭───────●", "│  ╭───●", "│  ╰───●", "●──╮", "│  ╰───●", "╰───────●"]
         rows = [
-            (icon[0], f"Evolva v{version}"),
+            (icon[0], f"E V O L A  v{version}"),
             (icon[1], subtitle),
             (icon[2], cwd),
             (icon[3], ""),
