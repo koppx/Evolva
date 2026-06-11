@@ -57,18 +57,29 @@ git clone git@github.com:koppx/Evolva.git
 cd Evolva
 python3 -m pip install -e ".[dev]"
 
-# 可选：任意 OpenAI-compatible endpoint
-export OPENAI_API_KEY="..."
-export OPENAI_MODEL="gpt-4o-mini"
-
 # 默认进入 TUI 工作台
 evolva
 ```
 
-进入 TUI 后，直接使用 Slash Commands：
+首次进入 TUI 后，直接在工作台里配置模型，不需要手动 export 环境变量：
 
 ```text
-/model gpt-4o-mini                      # 切换模型
+/config wizard                         # 交互式配置 model / base_url / api_key / temperature
+/config wizard 也可按 F4 快速唤起
+/config                                # 查看当前 provider 配置，AK 只显示脱敏状态
+/config set model gpt-4o-mini          # 单独切换模型
+/config set base_url https://...       # 配置 OpenAI-compatible endpoint
+/config set api_key sk-...             # 保存到本地 git-ignored runtime config，界面中会脱敏
+/model                                 # 查看当前模型与 provider
+```
+
+配置会保存到本地 `evolva/runtime/config.json`，该目录默认被 `.gitignore` 忽略；如果不配置模型，Evolva 仍可先以本地规则模式使用工具、记忆、Trace、Workflow、Eval 等能力。
+
+日常使用围绕 Slash Commands：
+
+```text
+/config wizard                         # 配置模型与 AK
+/model gpt-4o-mini                     # 切换模型
 /repo build                             # 构建仓库索引
 /repo search evolution                  # 搜索代码符号/片段
 /mcp add filesystem npx -y @modelcontextprotocol/server-filesystem .
@@ -79,8 +90,6 @@ evolva
 /dream --min-confidence 0.8             # 运行 Dreaming 质量门分析
 /evolve audit                           # 查看自进化覆盖
 ```
-
-即使暂未配置 `OPENAI_API_KEY`，Evolva 仍可先以本地模式运行工具、记忆、技能、Todo、Trace、Workflow、Eval 等基础能力，便于本地验证与扩展。
 
 ## 核心能力
 

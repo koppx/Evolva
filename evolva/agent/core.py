@@ -98,6 +98,44 @@ class EvolvaAgent:
         self.context.add("decision", f"Switched model to {model}", role="system", meta={"model": model})
         return model
 
+    def update_llm_config(
+        self,
+        *,
+        api_key: str | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+        temperature: float | None = None,
+    ) -> AgentConfig:
+        """Update active provider settings without recreating the whole agent.
+
+        TUI configuration uses this to make newly entered credentials effective
+        immediately for the next turn.
+        """
+
+        updates: dict[str, Any] = {}
+        if api_key is not None:
+            updates["api_key"] = api_key.strip()
+        if model is not None:
+            model = model.strip()
+            if not model:
+                raise ValueError("model name cannot be empty")
+            updates["model"] = model
+        if base_url is not None:
+            base_url = base_url.strip().rstrip("/")
+            if not base_url:
+                raise ValueError("base_url cannot be empty")
+            updates["base_url"] = base_url
+        if temperature is not None:
+            updates["temperature"] = float(temperature)
+        if not updates:
+            return self.config
+        self.config = replace(self.config, **updates)
+        self.llm = OpenAICompatibleLLM(self.config)
+        self.coordinator.llm = self.llm
+        safe_updates = {key: ("configured" if key == "api_key" and value else value) for key, value in updates.items()}
+        self.context.add("decision", "Updated LLM runtime configuration", role="system", meta=safe_updates)
+        return self.config
+
     def _run_dream_tool(self, limit: int = 20, apply: bool = False, verify: bool = False) -> tuple[str, dict[str, Any]]:
         """Tool adapter for running the Dream loop from evals or agent actions."""
         engine = DreamEngine(self)

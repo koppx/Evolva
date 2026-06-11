@@ -461,6 +461,37 @@ def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, t
     assert any("dream-loop" in m.text for m in app.messages)
     app._handle_command("/model")
     assert any("Current model" in m.text for m in app.messages)
+    app._handle_command("/config")
+    assert any("Provider configuration" in m.text for m in app.messages)
+    app._handle_command("/config set model tui-config-model")
+    assert app.agent.config.model == "tui-config-model"
+    app._handle_command("/config set base_url https://llm.example/v1")
+    assert app.agent.config.base_url == "https://llm.example/v1"
+    app._handle_command("/config set temperature 1")
+    assert app.agent.config.temperature == 1.0
+    app._handle_command("/config set api_key sk-local-test")
+    assert app.agent.config.api_key == "sk-local-test"
+    assert "sk-local-test" not in app.messages[-1].text
+    assert temp_config.runtime_config_file.exists()
+    app._submit("/config set api_key sk-hidden-history")
+    assert "sk-hidden-history" not in app.messages[-2].text
+    assert app.messages[-2].text == "/config set api_key <hidden>"
+    app._handle_command("/config wizard")
+    assert app.config_wizard is not None
+    app.input_text = "wizard-model"
+    app._handle_key("\n")
+    app.input_text = "https://wizard.example/v1"
+    app._handle_key("\n")
+    app.input_text = "0.9"
+    app._handle_key("\n")
+    app.input_text = "sk-wizard-test"
+    app._handle_key("\n")
+    assert app.config_wizard is None
+    assert app.agent.config.model == "wizard-model"
+    assert app.agent.config.base_url == "https://wizard.example/v1"
+    assert app.agent.config.temperature == 0.9
+    assert app.agent.config.api_key == "sk-wizard-test"
+    assert "sk-wizard-test" not in app.messages[-1].text
     app._handle_command("/model tui-test-model")
     assert app.agent.config.model == "tui-test-model"
     app._handle_command("/mcp add tui-demo python3 server.py")

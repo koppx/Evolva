@@ -24,4 +24,6 @@ evolva/repo_index/
 evolva/workflows/
 evolva/workspace/
 evolva/artifacts/
+evolva/runtime/
 evolva/mcp/servers.json
+.local/

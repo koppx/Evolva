@@ -7,6 +7,7 @@ import pytest
 
 # Keep unit tests deterministic and offline even if the developer shell has LLM credentials.
 os.environ.pop("OPENAI_API_KEY", None)
+os.environ["EVOLVA_DISABLE_RUNTIME_CONFIG"] = "1"
 
 from evolva.config import AgentConfig
 

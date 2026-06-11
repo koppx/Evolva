@@ -15,7 +15,7 @@ from typing import Any
 from evolva.agent.dream import DreamEngine
 from evolva.agent.evolution_analyzer import EvalEvolutionAnalyzer, TraceEvolutionAnalyzer, apply_proposals, render_analysis, render_reports
 from evolva.agent.core import EvolvaAgent, TurnResult
-from evolva.config import AgentConfig
+from evolva.config import AgentConfig, mask_secret, remove_runtime_config_keys, save_runtime_config
 from evolva.loops import LoopRunner, render_loop_result, render_loop_specs
 
 
@@ -27,13 +27,14 @@ TUI keys:
   Ctrl+R         Show recent traces
   Ctrl+X         Show latest trace context events
   F2             Prepare /model command
+  F4             Open provider setup command
   PgUp/PgDn      Scroll chat
   Up/Down        Navigate input history
   Esc            Cancel current input line
   /exit          Quit
 
 Commands:
-  /help, /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp [add|remove|tools], /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /dream [backlog|verify|apply|--min-confidence n], /loop [list|show|run], /run <tool> <json>
+  /help, /config [set|wizard|clear], /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp [add|remove|tools], /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /dream [backlog|verify|apply|--min-confidence n], /loop [list|show|run], /run <tool> <json>
 """.strip()
 
 
@@ -67,6 +68,7 @@ class EvolvaTUI:
         self.input_text = ""
         self.history: list[str] = []
         self.history_index: int | None = None
+        self.config_wizard: dict[str, Any] | None = None
         self.scroll = 0
         self.status = "Ready"
         self.busy = False
@@ -183,7 +185,10 @@ class EvolvaTUI:
             self.history_index = None
             if not line:
                 return None
-            self.history.append(line)
+            if self.config_wizard is not None:
+                self._handle_config_wizard_input(line)
+                return None
+            self.history.append(self._sanitize_display_line(line))
             if line in {"/exit", "/quit"}:
                 return False
             self._submit(line)
@@ -208,8 +213,16 @@ class EvolvaTUI:
             self.input_text = "/model "
             self.status = "Type a model name, then Enter. Use /model to view current model."
             return None
+        if self._is_key(ch, curses.KEY_F4):
+            self.input_text = "/config wizard"
+            self.status = "Press Enter to configure model, base URL, and API key."
+            return None
         if text == "\x1b":  # Esc
             self.input_text = ""
+            if self.config_wizard is not None:
+                self.config_wizard = None
+                self.status = "Config wizard cancelled."
+                return None
             self.status = "Input cleared."
             return None
         if text in ("\b", "\x7f") or self._is_key(ch, curses.KEY_BACKSPACE):
@@ -257,7 +270,7 @@ class EvolvaTUI:
         return isinstance(ch, int) and ch in keys
 
     def _complete_command(self) -> None:
-        commands = ["/help", "/tools", "/skills", "/memory", "/context", "/todo", "/agents", "/trace", "/model", "/policy", "/repo", "/mcp", "/image", "/evolve", "/dream", "/loop", "/run", "/exit"]
+        commands = ["/help", "/config", "/tools", "/skills", "/memory", "/context", "/todo", "/agents", "/trace", "/model", "/policy", "/repo", "/mcp", "/image", "/evolve", "/dream", "/loop", "/run", "/exit"]
         matches = [c for c in commands if c.startswith(self.input_text)]
         if len(matches) == 1:
             self.input_text = matches[0] + (" " if matches[0] not in {"/help", "/tools", "/skills", "/exit"} else "")
@@ -267,7 +280,7 @@ class EvolvaTUI:
 
     def _submit(self, line: str) -> None:
         self.scroll = 0
-        self._add_user(line)
+        self._add_user(self._sanitize_display_line(line))
         if line.startswith("/"):
             self._handle_command(line)
             return
@@ -294,6 +307,8 @@ class EvolvaTUI:
         try:
             if line == "/help":
                 self._add_system(TUI_HELP)
+            elif line.startswith("/config"):
+                self._handle_config_command(line.removeprefix("/config").strip())
             elif line == "/tools":
                 self._add_system(self.agent.tools.describe())
             elif line == "/skills":
@@ -478,13 +493,148 @@ class EvolvaTUI:
     def _handle_model_command(self, value: str) -> None:
         if not value:
             choices = ", ".join(self._model_choices()) or "set EVOLVA_MODEL_CHOICES=model-a,model-b"
-            self._add_system(f"Current model: {self.agent.config.model}\nAvailable shortcuts: {choices}\nSwitch with /model <name> or F2.")
+            self._add_system(
+                f"Current model: {self.agent.config.model}\n"
+                f"Provider: {self.agent.config.base_url}\n"
+                f"API key: {mask_secret(self.agent.config.api_key)}\n"
+                f"Temperature: {self.agent.config.temperature}\n"
+                f"Available shortcuts: {choices}\n"
+                f"Switch with /model <name>, configure with /config wizard, or press F2/F4."
+            )
             return
         if value in {"next", "cycle"}:
             value = self._next_model()
         switched = self.agent.set_model(value)
         self.status = f"Model switched to {switched}"
         self._add_system(f"Switched model: {switched}")
+
+    def _handle_config_command(self, value: str) -> None:
+        if not value:
+            self._add_system(
+                "Provider configuration\n"
+                f"- model: {self.agent.config.model}\n"
+                f"- base_url: {self.agent.config.base_url}\n"
+                f"- api_key: {mask_secret(self.agent.config.api_key)}\n"
+                f"- temperature: {self.agent.config.temperature}\n"
+                f"- local file: {self.agent.config.runtime_config_file}\n\n"
+                "Commands:\n"
+                "  /config wizard\n"
+                "  /config set model <name>\n"
+                "  /config set base_url <url>\n"
+                "  /config set temperature <number>\n"
+                "  /config set api_key <key>\n"
+                "  /config clear api_key"
+            )
+            return
+        if value == "wizard":
+            self._start_config_wizard()
+            return
+        if value.startswith("set "):
+            self._config_set(value.removeprefix("set ").strip())
+            return
+        if value.startswith("clear "):
+            key = value.removeprefix("clear ").strip()
+            if key not in {"api_key", "model", "base_url", "temperature"}:
+                self._add_system("Usage: /config clear api_key|model|base_url|temperature")
+                return
+            data = remove_runtime_config_keys([key], self.agent.config.runtime_config_file)
+            defaults = AgentConfig(root=self.agent.config.root)
+            if key == "api_key":
+                self.agent.update_llm_config(api_key="")
+            elif key == "model":
+                self.agent.update_llm_config(model=defaults.model)
+            elif key == "base_url":
+                self.agent.update_llm_config(base_url=defaults.base_url)
+            elif key == "temperature":
+                self.agent.update_llm_config(temperature=defaults.temperature)
+            self._add_system(f"Cleared {key}. Remaining saved keys: {', '.join(data.keys()) or 'none'}")
+            return
+        self._add_system("Usage: /config | /config wizard | /config set <model|base_url|temperature|api_key> <value> | /config clear api_key")
+
+    def _config_set(self, rest: str) -> None:
+        if not rest:
+            self._add_system("Usage: /config set <model|base_url|temperature|api_key> <value>")
+            return
+        try:
+            key, raw_value = rest.split(maxsplit=1)
+        except ValueError:
+            self._add_system("Usage: /config set <model|base_url|temperature|api_key> <value>")
+            return
+        key = key.strip()
+        if key not in {"api_key", "model", "base_url", "temperature"}:
+            self._add_system("Supported keys: model, base_url, api_key, temperature")
+            return
+        value: str | float = raw_value.strip()
+        if key == "temperature":
+            value = float(value)
+        save_runtime_config({key: value}, self.agent.config.runtime_config_file)
+        self.agent.update_llm_config(**{key: value})
+        shown = mask_secret(str(value)) if key == "api_key" else value
+        self.status = f"Saved {key}."
+        self._add_system(f"Saved {key}: {shown}\nEffective model: {self.agent.config.model}\nProvider: {self.agent.config.base_url}\nAPI key: {mask_secret(self.agent.config.api_key)}")
+
+    def _start_config_wizard(self) -> None:
+        fields = ["model", "base_url", "temperature", "api_key"]
+        self.config_wizard = {"fields": fields, "index": 0, "values": {}}
+        self.input_text = self.agent.config.model
+        self.status = "Config wizard: model. Press Enter to accept/edit, Esc to cancel."
+        self._add_system(
+            "Provider setup wizard started.\n"
+            "Edit each value in the input bar and press Enter. Leave API key empty to keep the current key.\n"
+            "Secrets are masked in the TUI and saved only to the local git-ignored runtime config."
+        )
+
+    def _handle_config_wizard_input(self, value: str) -> None:
+        wizard = self.config_wizard
+        if wizard is None:
+            return
+        fields: list[str] = wizard["fields"]
+        index = int(wizard["index"])
+        field = fields[index]
+        values: dict[str, Any] = wizard["values"]
+        if field == "model":
+            values[field] = value or self.agent.config.model
+        elif field == "base_url":
+            values[field] = value or self.agent.config.base_url
+        elif field == "temperature":
+            values[field] = float(value) if value else self.agent.config.temperature
+        elif field == "api_key" and value:
+            values[field] = value
+        index += 1
+        if index >= len(fields):
+            self.config_wizard = None
+            save_runtime_config(values, self.agent.config.runtime_config_file)
+            self.agent.update_llm_config(**values)
+            self._add_system(
+                "Provider config saved.\n"
+                f"- model: {self.agent.config.model}\n"
+                f"- base_url: {self.agent.config.base_url}\n"
+                f"- api_key: {mask_secret(self.agent.config.api_key)}\n"
+                f"- temperature: {self.agent.config.temperature}"
+            )
+            self.status = "Provider config saved."
+            return
+        wizard["index"] = index
+        next_field = fields[index]
+        defaults = {
+            "base_url": self.agent.config.base_url,
+            "temperature": str(self.agent.config.temperature),
+            "api_key": "",
+        }
+        self.input_text = defaults.get(next_field, "")
+        self.status = f"Config wizard: {next_field}. Press Enter to continue, Esc to cancel."
+
+    def _sanitize_display_line(self, line: str) -> str:
+        if line.startswith("/config set api_key"):
+            return "/config set api_key <hidden>"
+        return line
+
+    def _worker_config_wizard(self) -> None:
+        # Kept as a compatibility no-op target for external tests/extensions.
+        try:
+            self.queue.put(("system", "Use /config wizard inside the TUI to configure provider settings."))
+        except Exception as exc:
+            self.queue.put(("error", f"Config wizard error: {exc}"))
 
     def _model_choices(self) -> list[str]:
         raw = os.getenv("EVOLVA_MODEL_CHOICES", "")
@@ -617,7 +767,7 @@ class EvolvaTUI:
         mode = "LLM" if self.agent.llm.available else "LOCAL"
         title = " EVOLVA  Agent Workbench "
         meta = f" {mode} · {model} · Memory · Skills · MCP · Trace · Dream · Loop "
-        keys = " F2 model  ^R traces  ^X context  ^T tools  /loop list  /help "
+        keys = " F2 model  F4 config  ^R traces  ^X context  ^T tools  /loop list  /help "
         self.stdscr.addnstr(y, 0, title.ljust(w), w - 1, self._color(3, curses.A_BOLD | curses.A_REVERSE))
         self.stdscr.addnstr(y + 1, 0, meta.ljust(w), w - 1, self._color(7))
         self.stdscr.addnstr(y + 2, 0, keys.ljust(w), w - 1, self._color(6))
@@ -676,10 +826,12 @@ class EvolvaTUI:
         width = max(1, w - len(prompt) - 1)
         display = self.input_text[-width:]
         placeholder = "Ask, run /loop, inspect /trace, or type /help" if not display else display
+        if self.config_wizard is not None and self.config_wizard["fields"][self.config_wizard["index"]] == "api_key" and display:
+            placeholder = "*" * min(len(display), width)
         attr = curses.A_NORMAL if display else self._color(7)
         self.stdscr.addnstr(y + 1, len(prompt), placeholder.ljust(width), width, attr)
         self.stdscr.move(y + 1, min(w - 2, len(prompt) + len(display)))
-        hint = "  Enter send · Tab complete · Esc clear · PgUp/PgDn scroll · Ctrl+T tools"
+        hint = "  Enter send · Tab complete · F4 config · Esc clear · PgUp/PgDn scroll · Ctrl+T tools"
         self.stdscr.addnstr(y + 2, 0, hint.ljust(w), w - 1, self._color(7))
 
     def _wrap(self, text: str, width: int) -> list[str]:
@@ -702,6 +854,7 @@ class EvolvaTUI:
             "Evolva is a local-first Agent Harness.",
             "",
             "Try:",
+            "  /config wizard     configure model provider in the TUI",
             "  /loop list         inspect repeatable agent loops",
             "  /dream             inspect self-evolution candidates",
             "  /trace list        inspect recent runs",
