@@ -650,6 +650,35 @@ def test_textual_placeholder_raises_when_dependency_missing():
     with pytest.raises(RuntimeError, match="Textual is not installed"):
         tui_module.EvolvaTextualApp()
 
+
+@pytest.mark.skipif(not tui_module.TEXTUAL_AVAILABLE, reason="Textual is not installed")
+def test_textual_input_accepts_chinese_key_events():
+    app = tui_module.EvolvaInput()
+
+    class FakeEvent:
+        key = "你"
+        character = "你"
+
+        def __init__(self):
+            self.stopped = False
+            self.prevented = False
+
+        def stop(self):
+            self.stopped = True
+
+        def prevent_default(self):
+            self.prevented = True
+
+    event = FakeEvent()
+    captured = []
+    app._insert_printable_text = captured.append
+    app.refresh = lambda *args, **kwargs: None
+    import asyncio
+
+    asyncio.run(app._on_key(event))
+    assert captured == ["你"]
+    assert event.stopped and event.prevented
+
 def test_inline_tui_ctrl_c_requires_second_interrupt(monkeypatch, capsys, temp_config):
     monkeypatch.setattr("evolva.tui.AgentConfig", lambda: temp_config)
     events = iter([KeyboardInterrupt, "/exit"])

@@ -934,6 +934,67 @@ class EvolvaTUI:
 
 if TEXTUAL_AVAILABLE:
 
+    class EvolvaInput(Input):  # type: ignore[misc]
+        """Input widget tuned for Chinese IME input in common macOS terminals.
+
+        Textual's stock input works for regular Unicode key events, but some
+        terminals send IME commits as multi-character printable key payloads.
+        This widget normalizes that path and forces a visible foreground/cursor
+        style so CJK text does not disappear into the gold focused border.
+        """
+
+        DEFAULT_CSS = (
+            Input.DEFAULT_CSS
+            + """
+            EvolvaInput {
+                color: #F3E8D0;
+                background: #0C0B09;
+                border: round #D9B762;
+                padding: 0 2;
+            }
+            EvolvaInput:focus {
+                color: #FFF5DB;
+                background: #0C0B09;
+                border: round #F2C96B;
+            }
+            EvolvaInput > .input--cursor {
+                background: #F2C96B;
+                color: #050402;
+                text-style: none;
+            }
+            EvolvaInput > .input--placeholder,
+            EvolvaInput > .input--suggestion {
+                color: #7F776A;
+            }
+            """
+        )
+
+        async def _on_key(self, event: Any) -> None:
+            character = getattr(event, "character", None)
+            key = getattr(event, "key", "")
+            if character and character.isprintable() and (len(character) > 1 or any(ord(ch) > 127 for ch in character)):
+                event.stop()
+                self._insert_printable_text(character)
+                event.prevent_default()
+                self.refresh()
+                return
+            if key and len(key) == 1 and ord(key) > 127 and key.isprintable():
+                event.stop()
+                self._insert_printable_text(key)
+                event.prevent_default()
+                self.refresh()
+                return
+            await super()._on_key(event)
+
+        def _insert_printable_text(self, text: str) -> None:
+            """Insert printable committed IME text while preserving selection semantics."""
+
+            selection = self.selection
+            if selection.is_empty:
+                self.insert_text_at_cursor(text)
+            else:
+                self.replace(text, *selection)
+
     class EvolvaTextualApp(App):  # type: ignore[misc]
         """Textual-powered Evolva workbench.
 
@@ -994,6 +1055,7 @@ if TEXTUAL_AVAILABLE:
             margin-top: 1;
             border: round #D9B762;
             background: #0C0B09;
+            color: #FFF5DB;
         }
         """
 
@@ -1024,13 +1086,13 @@ if TEXTUAL_AVAILABLE:
                         yield Static("Trace / Tool Stream", classes="panel_title")
                         yield RichLog(id="tools", wrap=True, highlight=True, markup=True)
                 yield Static("", id="status")
-                yield Input(placeholder="You › ask Evolva, or type /help", id="input")
+                yield EvolvaInput(placeholder="You › ask Evolva, or type /help", id="input")
                 yield Footer()
 
         def on_mount(self) -> None:
             self.title = "Evolva"
             self.sub_title = "Agent Workbench"
-            self.query_one("#input", Input).focus()
+            self.query_one("#input", EvolvaInput).focus()
             self._write_chat("[dim]Evolva is ready. Use /config wizard, /repo build, /dream, /loop, /trace, or /help.[/]")
             if not self.runtime.agent.llm.available:
                 self._write_chat("[dim]local mode · configure a provider with /config wizard or F4.[/]")
@@ -1062,12 +1124,12 @@ if TEXTUAL_AVAILABLE:
             thread.start()
 
         def action_model(self) -> None:
-            self.query_one("#input", Input).value = "/model "
-            self.query_one("#input", Input).focus()
+            self.query_one("#input", EvolvaInput).value = "/model "
+            self.query_one("#input", EvolvaInput).focus()
 
         def action_config(self) -> None:
-            self.query_one("#input", Input).value = "/config "
-            self.query_one("#input", Input).focus()
+            self.query_one("#input", EvolvaInput).value = "/config "
+            self.query_one("#input", EvolvaInput).focus()
 
         def action_traces(self) -> None:
             self.runtime._show_recent_traces()
@@ -1135,6 +1197,8 @@ if TEXTUAL_AVAILABLE:
             self.query_one("#status", Static).update(status)
 
 else:
+
+    EvolvaInput = None  # type: ignore[assignment]
 
     class EvolvaTextualApp:  # pragma: no cover - fallback placeholder.
         """Placeholder used when Textual is not installed."""
