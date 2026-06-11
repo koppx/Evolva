@@ -781,8 +781,8 @@ class EvolvaTUI:
         model = self._model_label()
         provider = self._provider_label()
         cwd = self._path_label(max(12, w - text_x - 2))
-        title = f"E V O L A  v{version}"
-        subtitle = f"{provider}_{model}" if provider != "local rule-mode" else "local_rule-mode"
+        title = f"E V O L A  Agent Workbench"
+        subtitle = f"v{version} · " + (f"{provider}_{model}" if provider != "local rule-mode" else "local_rule-mode")
         for idx, row in enumerate(icon):
             self.stdscr.addnstr(y + idx, brand_x, row[: max(1, w - brand_x - 1)], max(1, w - brand_x - 1), self._color(8, curses.A_BOLD))
         self.stdscr.addnstr(y + 1, text_x, title[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(8, curses.A_BOLD))
@@ -827,23 +827,20 @@ class EvolvaTUI:
             self.stdscr.addnstr(y + i, x + 2, line.ljust(w - 3), w - 3, self._color(4 if self.tool_logs else 7))
 
     def _draw_status(self, y: int, w: int) -> None:
-        state = "thinking" if self.busy else "ready"
-        if self.status and self.status not in {"Ready", ""}:
+        state = "THINKING" if self.busy else "READY"
+        if self.status and self.status not in {"Ready", "ready", ""}:
             state = self.status
-        left = f"  {self._provider_label()} · {self._model_label()}"
-        middle = f"  {state}"
+        left = f"  {state} · {self._provider_label()} · {self._model_label()} · tools:{'on' if self.show_tools else 'off'}"
         right = f"{self._token_estimate()} tokens  "
         line = left
-        if len(left) + len(middle) + len(right) < w:
-            line += middle
         available = max(0, w - len(right) - 1)
         self.stdscr.addnstr(y, 0, line[:available].ljust(available), available, self._color(7))
         self.stdscr.addnstr(y, max(0, w - len(right) - 1), right[: max(0, w - 1)], max(0, min(len(right), w - 1)), self._color(7))
 
     def _draw_input(self, y: int, w: int) -> None:
         self.stdscr.addnstr(y, 0, "─" * max(0, w - 1), w - 1, self._color(7))
-        prompt = "› "
-        self.stdscr.addnstr(y + 1, 1, prompt, max(1, w - 2), self._color(6, curses.A_BOLD))
+        prompt = "You › "
+        self.stdscr.addnstr(y + 1, 1, prompt, max(1, w - 2), self._color(8, curses.A_BOLD))
         width = max(1, w - len(prompt) - 1)
         display = self.input_text[-width:]
         placeholder = "What's on your mind?" if not display else display
@@ -872,7 +869,9 @@ class EvolvaTUI:
     def _draw_empty_chat(self, y: int, x: int, h: int, w: int) -> None:
         if h <= 3 or w <= 70:
             return
+        hero = "Evolva is a local-first Agent Harness. Start with /config wizard, /repo build, /dream, or /help."
         hint = "F4 config · F2 model · ^R trace · ^X context · ^T tools · /help"
+        self.stdscr.addnstr(y + max(1, h // 2 - 1), x + 2, hero[: max(1, w - 4)], max(1, w - 4), self._color(8, curses.A_BOLD))
         self.stdscr.addnstr(y + h - 1, x + 2, hint[: max(1, w - 4)], max(1, w - 4), self._color(7))
 
     def _safe_addch(self, y: int, x: int, ch: Any, attr: int = 0) -> None:
@@ -996,18 +995,21 @@ class EvolvaInlineTUI:
         subtitle = f"{provider}_{model}" if provider != "local rule-mode" else "local_rule-mode"
         cwd = self.app._path_label(96)
         icon = ["╭───────●", "│  ╭───●", "│  ╰───●", "●──╮", "│  ╰───●", "╰───────●"]
+        width = self._workbench_width()
+        inner = width - 4
         rows = [
-            (icon[0], f"E V O L A  v{version}"),
-            (icon[1], subtitle),
-            (icon[2], cwd),
-            (icon[3], ""),
-            (icon[4], ""),
-            (icon[5], ""),
+            f"{icon[0]:<14} E V O L A  Agent Workbench  v{version}",
+            f"{icon[1]:<14} {subtitle}",
+            f"{icon[2]:<14} {cwd}",
+            f"{icon[3]:<14} Trace · Eval · Dream · Loop · MCP · Memory · Guardrails",
+            f"{icon[4]:<14} /model  /mcp  /trace context latest  /loop run dream-loop",
+            f"{icon[5]:<14} F2 model · F4 config · Ctrl+R trace · Ctrl+X context",
         ]
         print()
-        for left, right in rows:
-            print(f"  {self._primary(left):<18} {self._dim(right)}")
-        print(self._dim("─" * min(96, max(32, self._terminal_width() - 1))))
+        print(self._primary("╭─ Evolva TUI Workbench " + "─" * max(0, width - 25) + "╮"))
+        for row in rows:
+            print(self._primary("│ ") + self._fit(row, inner) + self._primary(" │"))
+        print(self._primary("╰" + "─" * (width - 2) + "╯"))
 
     def _flush_messages(self) -> None:
         for msg in self.app.messages[self._printed_messages :]:
@@ -1055,6 +1057,35 @@ class EvolvaInlineTUI:
         except OSError:
             return 96
 
+    def _workbench_width(self) -> int:
+        """Return a stable content width for the inline workbench."""
+        return min(118, max(72, self._terminal_width() - 2))
+
+    def _fit(self, text: str, width: int) -> str:
+        if len(text) > width:
+            text = text[: max(0, width - 1)] + "…"
+        return text.ljust(width)
+
+    def _wrap_text(self, text: str, width: int) -> list[str]:
+        lines: list[str] = []
+        for raw in text.splitlines() or [""]:
+            if not raw:
+                lines.append("")
+                continue
+            lines.extend(textwrap.wrap(raw, width=width, replace_whitespace=False, drop_whitespace=False) or [raw[:width]])
+        return lines
+
+    def _panel(self, title: str, text: str, *, accent: bool = True) -> str:
+        width = self._workbench_width()
+        inner = width - 4
+        paint = self._primary if accent else self._dim
+        label = f" {title} "
+        lines = [paint("╭─" + label + "─" * max(0, width - len(label) - 3) + "╮")]
+        for part in self._wrap_text(text, inner):
+            lines.append(paint("│ ") + self._fit(part, inner) + paint(" │"))
+        lines.append(paint("╰" + "─" * (width - 2) + "╯"))
+        return "\n".join(lines)
+
     def _ansi(self, code: str, text: str) -> str:
         if not sys.stdout.isatty() or os.getenv("NO_COLOR"):
             return text
@@ -1067,16 +1098,16 @@ class EvolvaInlineTUI:
         return self._ansi("90", text)
 
     def _user(self, text: str) -> str:
-        return f"{self._ansi('97;1', '❯')} {text}"
+        return f"{self._ansi('97;1', 'You ›')} {text}"
 
     def _agent(self, text: str) -> str:
-        return f"{self._primary('⏺')} {text}"
+        return self._panel("Evolva", text, accent=True)
 
     def _system(self, text: str) -> str:
-        return f"{self._dim('•')} {text}"
+        return self._panel("System", text, accent=False)
 
     def _tool(self, text: str) -> str:
-        return f"{self._ansi('95', '↳')} {self._dim(text)}"
+        return self._panel("Trace / Tool Stream", text, accent=False)
 
     def _error(self, text: str) -> str:
-        return f"{self._ansi('91;1', '✕')} {text}"
+        return self._panel("Error", text, accent=False)

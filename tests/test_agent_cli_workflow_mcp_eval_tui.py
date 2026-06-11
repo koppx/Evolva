@@ -561,8 +561,9 @@ def test_tui_status_bar_avoids_duplicate_ready(monkeypatch, temp_config):
     app.stdscr = FakeScreen()
     app._draw_status(0, 80)
     status = " ".join(writes).strip()
+    assert "READY" in status
     assert "Ready  Ready" not in status
-    assert "rule-mode" in status
+    assert "rule-mode" in status and "tools:on" in status
 
 
 def test_tui_draws_polished_shell(monkeypatch, temp_config):
@@ -582,19 +583,34 @@ def test_tui_draws_polished_shell(monkeypatch, temp_config):
 
     app.stdscr = FakeScreen()
     app._draw_title(0, 100)
-    app._draw_chat(6, 0, 16, 70)
-    app._draw_tools(6, 70, 16, 30)
+    app._draw_chat(7, 0, 16, 92)
+    app._draw_tools(7, 70, 16, 30)
     app._draw_input(20, 100)
     rendered = "\n".join(writes)
-    assert "E V O L A" in rendered
+    assert "E V O L A  Agent Workbench" in rendered
     assert "local_rule-mode" in rendered
     assert "pytest-of-bytedance" in rendered
     assert "╭───────●" in rendered
+    assert "Evolva is a local-first Agent Harness." in rendered
     assert "Trace / Tool Stream" in rendered
     assert "No tool calls yet." in rendered
     assert "What's on your mind?" in rendered
-    assert "›" in rendered
+    assert "You ›" in rendered
 
+
+
+def test_inline_tui_renders_workbench_panels(monkeypatch, capsys, temp_config):
+    monkeypatch.setattr("evolva.tui.AgentConfig", lambda: temp_config)
+    app = EvolvaInlineTUI(assume_yes=True)
+    app._print_header()
+    print(app._agent("done"))
+    print(app._tool("TOOL repo_index.build -> ok=True"))
+    out = capsys.readouterr().out
+    assert "Evolva TUI Workbench" in out
+    assert "E V O L A  Agent Workbench" in out
+    assert "Trace · Eval · Dream · Loop" in out
+    assert "╭─ Evolva" in out
+    assert "Trace / Tool Stream" in out
 
 def test_inline_tui_ctrl_c_requires_second_interrupt(monkeypatch, capsys, temp_config):
     monkeypatch.setattr("evolva.tui.AgentConfig", lambda: temp_config)
