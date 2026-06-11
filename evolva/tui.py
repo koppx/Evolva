@@ -936,6 +936,11 @@ class EvolvaTUI:
 
 if TEXTUAL_AVAILABLE:
 
+    class EvolvaLog(RichLog):  # type: ignore[misc]
+        """Read-only log panel that never steals focus from the command input."""
+
+        can_focus = False
+
     class EvolvaInput(Static):  # type: ignore[misc]
         """Small self-rendered command line with robust CJK/IME display.
 
@@ -1040,6 +1045,8 @@ if TEXTUAL_AVAILABLE:
         ad-hoc terminal printing with a proper panel layout and key bindings.
         """
 
+        AUTO_FOCUS = "#input"
+
         CSS = """
         Screen {
             background: #050402;
@@ -1079,7 +1086,7 @@ if TEXTUAL_AVAILABLE:
             text-style: bold;
             padding: 0 1;
         }
-        RichLog {
+        EvolvaLog {
             padding: 0 1;
             scrollbar-color: #D9B762;
             scrollbar-background: #11100D;
@@ -1119,10 +1126,10 @@ if TEXTUAL_AVAILABLE:
                 with Horizontal(id="main"):
                     with Vertical(id="chat_panel"):
                         yield Static("Conversation", classes="panel_title")
-                        yield RichLog(id="chat", wrap=True, highlight=True, markup=True)
+                        yield EvolvaLog(id="chat", wrap=True, highlight=True, markup=True)
                     with Vertical(id="tool_panel", classes="" if self.show_tools else "hidden"):
                         yield Static("Trace / Tool Stream", classes="panel_title")
-                        yield RichLog(id="tools", wrap=True, highlight=True, markup=True)
+                        yield EvolvaLog(id="tools", wrap=True, highlight=True, markup=True)
                 yield Static("", id="status")
                 yield EvolvaInput(placeholder="You › ask Evolva, or type /help", id="input")
                 yield Footer()
@@ -1130,12 +1137,52 @@ if TEXTUAL_AVAILABLE:
         def on_mount(self) -> None:
             self.title = "Evolva"
             self.sub_title = "Agent Workbench"
-            self.query_one("#input", EvolvaInput).focus()
+            input_widget = self.query_one("#input", EvolvaInput)
+            self.set_focus(input_widget)
+            input_widget.focus()
+            self.call_after_refresh(input_widget.focus)
             self._write_chat("[dim]Evolva is ready. Use /config wizard, /repo build, /dream, /loop, /trace, or /help.[/]")
             if not self.runtime.agent.llm.available:
                 self._write_chat("[dim]local mode · configure a provider with /config wizard or F4.[/]")
             self.set_interval(0.1, self._drain_runtime_queue)
             self._refresh_status()
+
+        async def on_key(self, event: Any) -> None:
+            """Keep typing routed to the command line even if a panel gets focus.
+
+            Real terminals can focus Textual's scrollable log widgets before the
+            custom input has focus, which makes CJK IME commits appear to vanish.
+            Evolva treats normal printable text and line-editing keys as command
+            input unless the input already handled them.
+            """
+
+            input_widget = self.query_one("#input", EvolvaInput)
+            if self.focused is input_widget:
+                return
+            key = getattr(event, "key", "")
+            character = getattr(event, "character", None)
+            is_input_key = (
+                key in {"enter", "ctrl+j", "backspace", "ctrl+h", "escape"}
+                or character in {"\n", "\r", "\b", "\x7f"}
+                or bool(character and character.isprintable())
+                or bool(len(key) == 1 and key.isprintable())
+            )
+            if not is_input_key or key.startswith("ctrl+") and key not in {"ctrl+j", "ctrl+h"}:
+                return
+            input_widget.focus()
+            await input_widget._on_key(event)
+
+        async def on_paste(self, event: Any) -> None:
+            """Paste committed text into the command line, preserving Unicode."""
+
+            text = getattr(event, "text", "")
+            if not text:
+                return
+            input_widget = self.query_one("#input", EvolvaInput)
+            input_widget.focus()
+            input_widget.set_value(input_widget.value + text.replace("\r\n", "\n"))
+            event.stop()
+            event.prevent_default()
 
         def on_evolva_input_submitted(self, event: EvolvaInput.Submitted) -> None:
             line = event.value.strip()
@@ -1204,7 +1251,7 @@ if TEXTUAL_AVAILABLE:
             self.runtime._drain_queue()
             if self.runtime.tool_logs:
                 tool_log = self.runtime.tool_logs[-1]
-                tools = self.query_one("#tools", RichLog)
+                tools = self.query_one("#tools", EvolvaLog)
                 if not getattr(self, "_last_tool_log", None) == tool_log:
                     tools.write(tool_log)
                     self._last_tool_log = tool_log
@@ -1224,7 +1271,7 @@ if TEXTUAL_AVAILABLE:
             self._printed_messages = len(self.runtime.messages)
 
         def _write_chat(self, text: str) -> None:
-            self.query_one("#chat", RichLog).write(text)
+            self.query_one("#chat", EvolvaLog).write(text)
 
         def _refresh_status(self) -> None:
             state = "THINKING" if self.runtime.busy else "READY"
