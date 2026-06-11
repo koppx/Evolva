@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -9,6 +8,7 @@ from typing import Any
 
 from evolva.agent.core import EvolvaAgent
 from evolva.config import AgentConfig
+from evolva.eval.scorers import ScoreCheck, ScoreReport, ScorerContext, ScorerRegistry, build_default_registry
 
 
 @dataclass
@@ -18,6 +18,7 @@ class EvalResult:
     score: float
     checks: dict[str, bool]
     answer: str
+    score_report: dict[str, Any] = field(default_factory=dict)
     tool_logs: list[str] = field(default_factory=list)
     duration_ms: int = 0
 
@@ -36,9 +37,10 @@ class EvalGateResult:
 class EvalHarness:
     """Small stdlib eval harness for agent regression baselines."""
 
-    def __init__(self, config: AgentConfig | None = None, *, assume_yes: bool = True):
+    def __init__(self, config: AgentConfig | None = None, *, assume_yes: bool = True, scorer_registry: ScorerRegistry | None = None):
         self.config = config or AgentConfig()
         self.agent = EvolvaAgent(self.config, assume_yes=assume_yes)
+        self.scorers = scorer_registry or build_default_registry()
         self.results_dir = self.config.eval_results_dir
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -66,43 +68,29 @@ class EvalHarness:
             answer = result.answer
             tool_logs = result.tool_logs
         duration_ms = int((time.time() - started) * 1000)
-        checks = self.score(task, answer, tool_logs, duration_ms=duration_ms)
-        passed = all(checks.values()) if checks else bool(answer.strip())
-        score = sum(1 for ok in checks.values() if ok) / max(1, len(checks))
+        score_report = self.score_report(task, answer, tool_logs, duration_ms=duration_ms)
+        checks = score_report.booleans()
+        passed = score_report.passed if checks else bool(answer.strip())
+        score = score_report.score
         return EvalResult(
             id=str(task.get("id", "unnamed")),
             passed=passed,
             score=score,
             checks=checks,
             answer=answer,
+            score_report=score_report.to_dict(),
             tool_logs=tool_logs,
             duration_ms=duration_ms,
         )
 
     def score(self, task: dict[str, Any], answer: str, tool_logs: list[str], *, duration_ms: int | None = None) -> dict[str, bool]:
-        text = answer + "\n" + "\n".join(tool_logs)
-        checks: dict[str, bool] = {}
-        for expected in task.get("expected_contains", []):
-            checks[f"contains:{expected}"] = str(expected) in text
-        for forbidden in task.get("forbidden_contains", []):
-            checks[f"not_contains:{forbidden}"] = str(forbidden) not in text
-        for pattern in task.get("expected_regex", []):
-            checks[f"regex:{pattern}"] = re.search(str(pattern), text, flags=re.MULTILINE) is not None
-        for artifact in task.get("expected_artifacts", []):
-            path = self._safe_artifact_path(str(artifact))
-            checks[f"artifact_inside_root:{artifact}"] = path is not None
-            checks[f"artifact_exists:{artifact}"] = bool(path and path.exists())
-        for expected in task.get("expected_memory", []):
-            query = str(expected)
-            checks[f"memory:{query}"] = query in self.agent.memory.context(query)
-        for expected in task.get("expected_context", []):
-            query = str(expected)
-            checks[f"context:{query}"] = query in self.agent.context.render(query=query)
-        if "max_duration_ms" in task and duration_ms is not None:
-            checks[f"duration<={task['max_duration_ms']}ms"] = duration_ms <= int(task["max_duration_ms"])
-        if "no_tool_error" in task.get("scorers", []):
-            checks["no_tool_error"] = "ok=False" not in text and "Tool error" not in text
-        return checks
+        """Return legacy boolean checks for compatibility with existing callers."""
+        return self.score_report(task, answer, tool_logs, duration_ms=duration_ms).booleans()
+
+    def score_report(self, task: dict[str, Any], answer: str, tool_logs: list[str], *, duration_ms: int | None = None) -> ScoreReport:
+        """Run registered scorers and return a weighted, explainable score report."""
+        context = ScorerContext(root=self.config.root, answer=answer, tool_logs=tool_logs, duration_ms=duration_ms, agent=self.agent)
+        return self.scorers.run(task, context)
 
     def _safe_artifact_path(self, artifact: str) -> Path | None:
         path = (self.config.root / artifact).resolve()
@@ -134,6 +122,7 @@ class EvalHarness:
                     "score": result.score,
                     "checks": result.checks,
                     "duration_ms": result.duration_ms,
+                    "score_report": result.score_report,
                 }
                 for result in results
             },
@@ -194,6 +183,7 @@ class EvalHarness:
                 "score": float(item.get("score", 0.0)),
                 "checks": item.get("checks", {}),
                 "duration_ms": int(item.get("duration_ms", 0)),
+                "score_report": item.get("score_report", {}),
             }
         return {"version": 1, "summary": payload.get("summary", {}), "tasks": tasks}
 

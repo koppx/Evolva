@@ -283,7 +283,23 @@ evolva eval evals/tasks/smoke.jsonl --yes \
   --no-regression
 ```
 
-JSONL 任务支持 `expected_contains`、`forbidden_contains`、`expected_regex`、`expected_artifacts`、`expected_memory`、`expected_context`、`max_duration_ms`、`no_tool_error` 等检查项。baseline 位于 `evals/baselines/`，CI 配置位于 `.github/workflows/ci.yml`。
+JSONL 任务不再绑定单一 checklist，而是进入可插拔 Scorer Registry：内置 `contains`、`not_contains`、`regex`、`artifact_exists`、`artifact_contains`、`json_match`、`memory_contains`、`context_contains`、`trace_event`、`tool_sequence`、`command`、`latency`、`no_tool_error` 等评测算子。每个 check 都会产出 dimension、weight、evidence、expected/actual，并汇总为 weighted score，便于业务方继续接入自定义 rule-based scorer 或 LLM-as-judge。baseline 位于 `evals/baselines/`，CI 配置位于 `.github/workflows/ci.yml`。
+
+
+## 当前工程化缺口与演进方向
+
+Evolva 的目标不是把所有业务场景包装成一个“万能 Agent 分数”，而是把 Agent Infra 的关键机制做成可检查、可替换、可扩展的工程层。对标更成熟的 Agent Infra，当前仍有几类需要继续生产化的方向：
+
+| 模块 | 之前容易显得 toy 的点 | 本轮/后续生产化方向 |
+| --- | --- | --- |
+| Eval Score | 固定字符串 checklist，解释性弱 | 已升级为 Scorer Registry，多维 weighted score，并内置 artifact / trace / command / tool sequence 算子 |
+| Trace | JSON 文件可读但缺少标准 schema 与查询层 | 后续补 trace schema version、索引、DAG/timeline 可视化与跨 run 聚合 |
+| Sandbox | 本地路径与命令策略为主 | 后续扩展容器/进程级隔离、资源限额、网络策略和 artifact manifest |
+| Repo Index | 轻量符号/文本检索 | 后续补 tree-sitter 多语言增量索引、引用图、embedding backend 抽象 |
+| MCP | stdio 优先 | 后续补 HTTP/SSE、server health、tool schema cache 与权限策略 |
+| Dream / Loop | 已有候选与 verifier，但还需要更多闭环数据 | 后续把 eval failure、trace anomaly、cost/latency 自动转为 Dream candidate，并要求 verifier 后再 promotion |
+
+这个项目更适合作为本地 Agent Infra 的开放工程底座：业务侧的评测数据、领域 scorer、私有工具和安全策略可以在这套 harness 上组合，而不是被一个固定 demo 流程锁死。
 
 ## TUI 工作台预览
 
@@ -328,6 +344,7 @@ PYTHONPYCACHEPREFIX=.pycache python3 -m compileall evolva tests
 python3 -m pytest -q
 evolva eval evals/tasks/smoke.jsonl --yes --baseline evals/baselines/smoke.json --min-score 1.0 --no-regression
 evolva eval evals/tasks/repo_index.jsonl --yes --baseline evals/baselines/repo_index.json --min-score 1.0 --no-regression
+evolva eval evals/tasks/scorers.jsonl --yes --baseline evals/baselines/scorers.json --min-score 1.0 --no-regression
 ```
 
 ## 工程结构

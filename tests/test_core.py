@@ -140,9 +140,12 @@ def test_eval_harness_scores_contains(tmp_path):
         workflows_dir=tmp_path / "evolva" / "workflows",
     )
     harness = EvalHarness(cfg)
-    checks = harness.score({"expected_contains": ["abc"], "scorers": ["no_tool_error"]}, "abc", [])
+    report = harness.score_report({"expected_contains": ["abc"], "scorers": ["no_tool_error"]}, "abc", [])
+    checks = report.booleans()
     assert checks["contains:abc"]
     assert checks["no_tool_error"]
+    assert report.score == 1.0
+    assert report.dimensions()["correctness"] == 1.0
 
 
 def test_image_content_part_from_local_png(tmp_path):

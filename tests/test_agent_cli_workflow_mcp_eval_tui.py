@@ -13,6 +13,7 @@ from evolva.agent.multi_agent import MultiAgentCoordinator
 from evolva.agent.tracing import TraceRecorder
 from evolva.cli import build_parser, dream_cmd, evolve_cmd, handle_command, loop_cmd, main, mcp_cmd, once, optimize_cmd
 from evolva.eval.harness import EvalHarness, EvalResult, render_gate, render_results
+from evolva.eval.scorers import ScoreCheck, ScorerRegistry
 from evolva.tui import EvolvaTUI, TUIConfirmation
 from evolva.workflow.engine import WorkflowEngine
 
@@ -193,12 +194,16 @@ def test_eval_harness_score_summary_report_and_run_file(temp_config, tmp_path):
     harness = EvalHarness(temp_config, assume_yes=True)
     harness.agent.memory.add("fact", "Eval remembers memory state")
     harness.agent.context.add("decision", "Eval checks context state")
-    checks = harness.score(
+    out = temp_config.workspace / "out.txt"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("artifact ok", encoding="utf-8")
+    report = harness.score_report(
         {
             "expected_contains": ["ok"],
             "forbidden_contains": ["bad"],
             "expected_regex": ["^ok$"],
             "expected_artifacts": ["evolva/workspace/out.txt", "../escape.txt"],
+            "expected_artifact_contains": [{"path": "evolva/workspace/out.txt", "contains": ["artifact"]}],
             "expected_memory": ["memory state"],
             "expected_context": ["context state"],
             "max_duration_ms": 500,
@@ -208,15 +213,18 @@ def test_eval_harness_score_summary_report_and_run_file(temp_config, tmp_path):
         [],
         duration_ms=10,
     )
+    checks = report.booleans()
     assert checks["contains:ok"]
     assert checks["not_contains:bad"]
     assert checks["regex:^ok$"]
-    assert not checks["artifact_exists:evolva/workspace/out.txt"]
+    assert checks["artifact_exists:evolva/workspace/out.txt"]
+    assert checks["artifact_contains:evolva/workspace/out.txt:artifact"]
     assert not checks["artifact_inside_root:../escape.txt"]
     assert checks["memory:memory state"]
     assert checks["context:context state"]
     assert checks["duration<=500ms"]
     assert checks["no_tool_error"]
+    assert report.dimensions()["artifact"] < 1.0
 
     results = [EvalResult("a", True, 1.0, {}, "ok"), EvalResult("b", False, 0.0, {}, "bad")]
     assert harness.summary(results) == {"total": 2, "passed": 1, "failed": 1, "avg_score": 0.5}
@@ -234,6 +242,19 @@ def test_eval_harness_score_summary_report_and_run_file(temp_config, tmp_path):
     tasks.write_text('\n# comment\n{"id":"fallback","input":"remember eval","expected_contains":["已记住"],"scorers":["no_tool_error"]}\n')
     run_results = harness.run_file(tasks)
     assert len(run_results) == 1 and run_results[0].passed
+
+
+def test_eval_harness_custom_scorer_registry(temp_config):
+    registry = ScorerRegistry()
+
+    def custom(task, context):
+        yield ScoreCheck("custom:ok", "needle" in context.text, dimension="business", evidence="domain-specific check")
+
+    registry.register("business_rule", custom)
+    harness = EvalHarness(temp_config, assume_yes=True, scorer_registry=registry)
+    report = harness.score_report({"scorers": ["business_rule"]}, "needle", [])
+    assert report.score == 1.0
+    assert report.dimensions() == {"business": 1.0}
 
 
 def test_mcp_manager_config_render_and_fake_client(monkeypatch, tmp_path):
