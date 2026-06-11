@@ -314,6 +314,8 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     assert root_args.cmd is None and root_args.chat is False
     tui_args = parser.parse_args(["tui", "--yes", "--no-tools"])
     assert tui_args.cmd == "tui" and tui_args.yes and tui_args.no_tools
+    assert parser.parse_args(["tui", "--fullscreen"]).fullscreen
+    assert parser.parse_args(["--fullscreen"]).fullscreen
     chat_args = parser.parse_args(["--chat", "--yes"])
     assert chat_args.cmd is None and chat_args.chat and chat_args.yes
     assert parser.parse_args(["mcp", "call", "s", "t", "{}", "--yes"]).mcp_cmd == "call"
@@ -345,6 +347,14 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     monkeypatch.setattr("evolva.cli.run_tui", fake_run_tui)
     assert main([]) == 0
     assert called["tui"] == (False, True)
+
+    def fake_fullscreen_tui(assume_yes=False, show_tools=True):
+        called["fullscreen"] = (assume_yes, show_tools)
+        return 0
+
+    monkeypatch.setattr("evolva.cli.run_fullscreen_tui", fake_fullscreen_tui)
+    assert main(["tui", "--fullscreen", "--yes", "--no-tools"]) == 0
+    assert called["fullscreen"] == (True, False)
 
     def fake_chat(args):
         called["chat"] = (args.yes, args.show_tools)

@@ -13,7 +13,7 @@ from evolva.config import AgentConfig
 from evolva.eval.harness import EvalHarness, render_gate, render_results
 from evolva.loops import LoopRunner, render_loop_result, render_loop_specs
 from evolva.maintenance.optimizer import run_daily_optimization
-from evolva.tui import run_tui
+from evolva.tui import run_fullscreen_tui, run_tui
 from evolva.workflow.engine import WorkflowEngine
 
 
@@ -329,7 +329,8 @@ def once(args: argparse.Namespace) -> int:
 
 
 def tui(args: argparse.Namespace) -> int:
-    return run_tui(assume_yes=args.yes, show_tools=not args.no_tools)
+    runner = run_fullscreen_tui if getattr(args, "fullscreen", False) else run_tui
+    return runner(assume_yes=args.yes, show_tools=not args.no_tools)
 
 
 def trace_cmd(args: argparse.Namespace) -> int:
@@ -496,10 +497,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chat", action="store_true", help="Start plain line-based chat instead of the default TUI")
     parser.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting in default TUI mode")
     parser.add_argument("--no-tools", action="store_true", help="Hide the TUI tool log panel at startup")
+    parser.add_argument("--fullscreen", action="store_true", help="Use the legacy full-screen curses TUI")
     sub = parser.add_subparsers(dest="cmd", required=False, metavar="{tui,ask,trace,eval,evolve,optimize,dream,loop,workflow,mcp}")
     tui_p = sub.add_parser("tui", help="Open the Evolva TUI workbench explicitly")
     tui_p.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting")
     tui_p.add_argument("--no-tools", action="store_true", help="Hide the tool log panel at startup")
+    tui_p.add_argument("--fullscreen", action="store_true", help="Use the legacy full-screen curses TUI")
     tui_p.set_defaults(func=tui)
 
     once_p = sub.add_parser("ask", help="Automation: ask one question and exit")
@@ -628,7 +631,7 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "chat", False) and not getattr(args, "cmd", None):
         return chat(argparse.Namespace(yes=args.yes, show_tools=False))
     if not hasattr(args, "func"):
-        return tui(argparse.Namespace(yes=args.yes, no_tools=args.no_tools))
+        return tui(argparse.Namespace(yes=args.yes, no_tools=args.no_tools, fullscreen=args.fullscreen))
     return args.func(args)
 
 

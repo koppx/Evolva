@@ -6,6 +6,7 @@ import json
 import locale
 import os
 import shlex
+import sys
 import textwrap
 import threading
 import time
@@ -915,4 +916,153 @@ class EvolvaTUI:
 
 
 def run_tui(assume_yes: bool = False, show_tools: bool = True) -> int:
+    """Run Evolva's default inline TUI without taking over the full terminal."""
+
+    return EvolvaInlineTUI(assume_yes=assume_yes, show_tools=show_tools).run()
+
+
+def run_fullscreen_tui(assume_yes: bool = False, show_tools: bool = True) -> int:
+    """Run the legacy curses renderer for users that explicitly want a full-screen TUI."""
+
     return EvolvaTUI(assume_yes=assume_yes, show_tools=show_tools).run()
+
+
+class EvolvaInlineTUI:
+    """Non-fullscreen terminal workbench inspired by modern Ink-style CLIs.
+
+    The renderer keeps Evolva inside the normal terminal scrollback instead of
+    clearing the whole screen. It reuses the same command and agent runtime as
+    the curses TUI, but prints compact header/message/input blocks inline.
+    """
+
+    def __init__(self, assume_yes: bool = False, show_tools: bool = True):
+        self.app = EvolvaTUI(assume_yes=assume_yes, show_tools=show_tools)
+        self.show_tools = show_tools
+        self._printed_messages = 0
+
+    def run(self) -> int:
+        self._print_header()
+        if not self.app.agent.llm.available:
+            print(self._dim("local mode · use /config wizard or F4 in fullscreen mode to connect a model"))
+        while True:
+            try:
+                line = input(self._primary("› ")).strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 0
+            if not line:
+                continue
+            if line in {"/exit", "/quit"}:
+                return 0
+            if line == "/config wizard":
+                self._config_wizard()
+                continue
+            if line.startswith("/"):
+                self.app._handle_command(line)
+                self._wait_for_background()
+                self._flush_messages()
+                continue
+            print(self._user(line))
+            self.app.busy = True
+            self.app.status = "thinking"
+            try:
+                result = self.app.agent.chat(line)
+            except Exception as exc:
+                print(self._error(f"Agent error: {exc}"))
+                self.app.busy = False
+                continue
+            self.app.busy = False
+            if self.show_tools and result.tool_logs:
+                for log in result.tool_logs:
+                    print(self._tool(log))
+            print(self._agent(result.answer))
+
+    def _print_header(self) -> None:
+        version = self.app._project_version()
+        provider = self.app._provider_label()
+        model = self.app._model_label()
+        subtitle = f"{provider}_{model}" if provider != "local rule-mode" else "local_rule-mode"
+        cwd = self.app._path_label(96)
+        icon = ["╭╮  ╭╮", " ╰╮╭╯ ", " ╭╯╰╮ ", "╰╯  ╰╯"]
+        rows = [
+            (icon[0], f"Evolva v{version}"),
+            (icon[1], subtitle),
+            (icon[2], cwd),
+            (icon[3], ""),
+        ]
+        print()
+        for left, right in rows:
+            print(f"  {self._primary(left):<18} {self._dim(right)}")
+        print(self._dim("─" * min(96, max(32, self._terminal_width() - 1))))
+
+    def _flush_messages(self) -> None:
+        for msg in self.app.messages[self._printed_messages :]:
+            if msg.role == "You":
+                print(self._user(msg.text))
+            elif msg.role == "Agent":
+                print(self._agent(msg.text))
+            elif msg.role == "Error":
+                print(self._error(msg.text))
+            else:
+                print(self._system(msg.text))
+        self._printed_messages = len(self.app.messages)
+
+    def _wait_for_background(self) -> None:
+        while self.app.busy:
+            self.app._drain_queue()
+            time.sleep(0.05)
+        self.app._drain_queue()
+
+    def _config_wizard(self) -> None:
+        print(self._system("Provider setup wizard. Values are saved to local git-ignored runtime config."))
+        values: dict[str, Any] = {}
+        model = input(f"model [{self.app.agent.config.model}]: ").strip()
+        base_url = input(f"base_url [{self.app.agent.config.base_url}]: ").strip()
+        temperature = input(f"temperature [{self.app.agent.config.temperature}]: ").strip()
+        api_key = input("api_key [keep current]: ").strip()
+        if model:
+            values["model"] = model
+        if base_url:
+            values["base_url"] = base_url
+        if temperature:
+            values["temperature"] = float(temperature)
+        if api_key:
+            values["api_key"] = api_key
+        if not values:
+            print(self._dim("No changes."))
+            return
+        save_runtime_config(values, self.app.agent.config.runtime_config_file)
+        self.app.agent.update_llm_config(**values)
+        print(self._system(f"Provider config saved. model={self.app.agent.config.model}, api_key={mask_secret(self.app.agent.config.api_key)}"))
+
+    def _terminal_width(self) -> int:
+        try:
+            return os.get_terminal_size().columns
+        except OSError:
+            return 96
+
+    def _ansi(self, code: str, text: str) -> str:
+        if not sys.stdout.isatty() or os.getenv("NO_COLOR"):
+            return text
+        return f"\033[{code}m{text}\033[0m"
+
+    def _primary(self, text: str) -> str:
+        return self._ansi("94;1", text)
+
+    def _dim(self, text: str) -> str:
+        return self._ansi("90", text)
+
+    def _user(self, text: str) -> str:
+        return f"{self._ansi('97;1', '❯')} {text}"
+
+    def _agent(self, text: str) -> str:
+        return f"{self._primary('⏺')} {text}"
+
+    def _system(self, text: str) -> str:
+        return f"{self._dim('•')} {text}"
+
+    def _tool(self, text: str) -> str:
+        return f"{self._ansi('95', '↳')} {self._dim(text)}"
+
+    def _error(self, text: str) -> str:
+        return f"{self._ansi('91;1', '✕')} {text}"
