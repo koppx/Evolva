@@ -1,82 +1,58 @@
-<svg width="1600" height="980" viewBox="0 0 1600 980" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Evolva TUI Workbench preview">
+<svg width="1600" height="760" viewBox="0 0 1600 760" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Evolva TUI Workbench preview">
   <defs>
-    <linearGradient id="page" x1="120" y1="0" x2="1480" y2="980" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#050402"/>
-      <stop offset="0.48" stop-color="#0B0803"/>
-      <stop offset="1" stop-color="#141007"/>
-    </linearGradient>
-    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#11100D"/>
-      <stop offset="1" stop-color="#080807"/>
-    </linearGradient>
-    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#FFF0B3"/>
-      <stop offset="0.45" stop-color="#D9B762"/>
-      <stop offset="1" stop-color="#9F7A30"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="34" stdDeviation="34" flood-color="#000000" flood-opacity="0.72"/>
-    </filter>
-    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="18" result="blur"/>
-      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0.9  0 1 0 0 0.7  0 0 1 0 0.25  0 0 0 0.45 0"/>
-      <feBlend in="SourceGraphic"/>
-    </filter>
     <style>
       .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;}
       .sans{font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;}
-      .dim{fill:#7E7A70}.muted{fill:#A7A096}.text{fill:#E8E0D0}.gold{fill:#D9B762}.blue{fill:#7AB7FF}.green{fill:#79D18B}.red{fill:#E07A7A}
+      .title{fill:#E8C766}.gold{fill:#D9B762}.gold2{fill:#B88A36}.text{fill:#ECE5D8}.muted{fill:#AAA194}.dim{fill:#766F64}.blue{fill:#75B7FF}.green{fill:#73D48E}.line{stroke:#3A2A10}
     </style>
   </defs>
 
-  <rect width="1600" height="980" rx="44" fill="url(#page)"/>
-  <circle cx="1310" cy="120" r="260" fill="#D9B762" opacity="0.08" filter="url(#softGlow)"/>
-  <circle cx="270" cy="820" r="300" fill="#9F7A30" opacity="0.06" filter="url(#softGlow)"/>
+  <rect width="1600" height="760" rx="44" fill="#050505"/>
+  <path d="M1200 0h356c24 0 44 20 44 44v672c0 24-20 44-44 44h-470c80-126 128-248 146-366 18-120 6-250-32-394Z" fill="#1B1408" opacity="0.78"/>
+  <path d="M0 570c140-80 292-110 454-90 162 20 292 88 390 204 20 24 38 49 54 76H44c-24 0-44-20-44-44V570Z" fill="#120D05" opacity="0.9"/>
+  <circle cx="1280" cy="110" r="220" fill="#D9B762" opacity="0.08"/>
+  <circle cx="256" cy="718" r="280" fill="#9F7A30" opacity="0.07"/>
 
-  <rect x="90" y="72" width="1420" height="832" rx="30" fill="#080807" stroke="#322511" stroke-width="1.5" filter="url(#shadow)"/>
-  <rect x="90" y="72" width="1420" height="56" rx="30" fill="#15110A"/>
-  <circle cx="126" cy="100" r="7" fill="#7A2D27"/>
-  <circle cx="154" cy="100" r="7" fill="#A57B32"/>
-  <circle cx="182" cy="100" r="7" fill="#496B39"/>
-  <text x="220" y="106" class="mono gold" font-size="18">evolva · local-first self-evolving agent workbench</text>
-  <text x="1370" y="106" class="mono dim" font-size="16">TUI-first</text>
+  <rect x="76" y="56" width="1448" height="648" rx="30" fill="#080807" stroke="#342611" stroke-width="2"/>
+  <rect x="76" y="56" width="1448" height="58" rx="30" fill="#15110A"/>
+  <path d="M76 86c0-17 13-30 30-30h1388c17 0 30 13 30 30v28H76V86Z" fill="#15110A"/>
+  <circle cx="114" cy="86" r="7" fill="#7A2D27"/>
+  <circle cx="142" cy="86" r="7" fill="#A57B32"/>
+  <circle cx="170" cy="86" r="7" fill="#4C6E3A"/>
+  <text x="202" y="92" class="mono title" font-size="17" font-weight="700">evolva · local-first self-evolving agent workbench</text>
+  <text x="1452" y="92" class="mono dim" font-size="15" text-anchor="end">TUI-first</text>
 
-  <g transform="translate(132 164)">
-    <text x="0" y="0" class="mono gold" font-size="28" font-weight="700">╭───────●</text>
-    <text x="0" y="36" class="mono gold" font-size="28" font-weight="700">│  ╭───●</text>
-    <text x="0" y="72" class="mono gold" font-size="28" font-weight="700">│  ╰───●</text>
-    <text x="0" y="108" class="mono gold" font-size="28" font-weight="700">●──╮</text>
-    <text x="0" y="144" class="mono gold" font-size="28" font-weight="700">│  ╰───●</text>
-    <text x="0" y="180" class="mono gold" font-size="28" font-weight="700">╰───────●</text>
+  <g transform="translate(124 146)">
+    <text x="0" y="0" class="mono title" font-size="25" font-weight="800">╭───────●</text>
+    <text x="0" y="32" class="mono title" font-size="25" font-weight="800">│  ╭───●</text>
+    <text x="0" y="64" class="mono title" font-size="25" font-weight="800">│  ╰───●</text>
+    <text x="0" y="96" class="mono title" font-size="25" font-weight="800">●──╮</text>
+    <text x="0" y="128" class="mono title" font-size="25" font-weight="800">│  ╰───●</text>
+    <text x="0" y="160" class="mono title" font-size="25" font-weight="800">╰───────●</text>
   </g>
-  <text x="410" y="196" class="mono gold" font-size="36" font-weight="800" letter-spacing="8">E V O L A</text>
-  <text x="410" y="235" class="mono dim" font-size="18">local_rule-mode · repo=/Users/bytedance/Documents/agent</text>
-  <text x="410" y="270" class="mono muted" font-size="18">Trace · Eval · Dream · Loop · MCP · Memory · Guardrails</text>
-  <line x1="120" y1="380" x2="1480" y2="380" stroke="#3A2A10" stroke-width="1"/>
+  <text x="386" y="168" class="mono title" font-size="38" font-weight="900" letter-spacing="10">E V O L V A</text>
+  <text x="386" y="208" class="mono dim" font-size="17">local_rule-mode · repo=/Users/bytedance/Documents/agent</text>
+  <text x="386" y="242" class="mono muted" font-size="17">Trace · Eval · Dream · Loop · MCP · Memory · Guardrails</text>
+  <line x1="110" y1="314" x2="1490" y2="314" class="line" stroke-width="1"/>
 
-  <rect x="120" y="410" width="870" height="360" rx="22" fill="url(#panel)" stroke="#30240F"/>
-  <rect x="1020" y="410" width="460" height="360" rx="22" fill="url(#panel)" stroke="#30240F"/>
+  <rect x="110" y="346" width="898" height="244" rx="22" fill="#0D0D0B" stroke="#30240F" stroke-width="1.5"/>
+  <rect x="1034" y="346" width="456" height="244" rx="22" fill="#0D0D0B" stroke="#30240F" stroke-width="1.5"/>
 
-  <text x="152" y="455" class="mono blue" font-size="18">[18:00:01] You:</text>
-  <text x="152" y="488" class="mono text" font-size="20">帮我分析当前仓库，生成可验证的优化计划</text>
-  <text x="152" y="552" class="mono gold" font-size="18">[18:00:03] Evolva:</text>
-  <text x="152" y="586" class="mono text" font-size="20">我会构建 repo index，读取最近 trace，再把候选改进入 Dream Backlog。</text>
-  <text x="152" y="648" class="mono gold" font-size="18">[18:00:08] Evolva:</text>
-  <text x="152" y="682" class="mono text" font-size="20">已完成：3 个候选、2 个 verifier、1 条可沉淀 skill proposal。</text>
-  <text x="152" y="738" class="mono dim" font-size="18">/model  /mcp  /trace context latest  /loop run dream-loop  /dream backlog</text>
+  <text x="140" y="390" class="mono blue" font-size="17">[18:00:01] You:</text>
+  <text x="140" y="422" class="mono text" font-size="19">帮我分析当前仓库，生成可验证的优化计划</text>
+  <text x="140" y="474" class="mono title" font-size="17">[18:00:03] Evolva:</text>
+  <text x="140" y="506" class="mono text" font-size="19">我会构建 repo index，读取最近 trace，再把候选改进入 Dream Backlog。</text>
+  <text x="140" y="558" class="mono dim" font-size="16">/model  /mcp  /trace context latest  /loop run dream-loop  /dream backlog</text>
 
-  <text x="1052" y="455" class="sans gold" font-size="22" font-weight="700">Trace / Tool Stream</text>
-  <g class="mono" font-size="17">
-    <text x="1052" y="500" class="green">TOOL repo_index.build</text>
-    <text x="1052" y="532" class="muted">symbols=312 · chunks=486 · ok=True</text>
-    <text x="1052" y="578" class="green">TOOL trace.context</text>
-    <text x="1052" y="610" class="muted">run=latest · prompt_events=7</text>
-    <text x="1052" y="656" class="green">TOOL dream.generate</text>
-    <text x="1052" y="688" class="muted">candidates=3 · drift_guard=pass</text>
-    <text x="1052" y="734" class="gold">TRACE saved → trace.v1</text>
-  </g>
+  <text x="1064" y="390" class="sans title" font-size="21" font-weight="800">Trace / Tool Stream</text>
+  <text x="1064" y="434" class="mono green" font-size="16">TOOL repo_index.build</text>
+  <text x="1064" y="462" class="mono muted" font-size="15">symbols=312 · chunks=486 · ok=True</text>
+  <text x="1064" y="504" class="mono green" font-size="16">TOOL dream.generate</text>
+  <text x="1064" y="532" class="mono muted" font-size="15">candidates=3 · drift_guard=pass</text>
+  <text x="1064" y="570" class="mono title" font-size="16">TRACE saved → trace.v1</text>
 
-  <rect x="120" y="800" width="1360" height="70" rx="18" fill="#0C0B09" stroke="#3A2A10"/>
-  <text x="154" y="844" class="mono text" font-size="22">› /dream verify --min-confidence 0.8</text>
-  <text x="1450" y="844" class="mono dim" font-size="17" text-anchor="end">F2 model · F4 config · Ctrl+R trace</text>
+  <rect x="110" y="618" width="1380" height="58" rx="18" fill="#0C0B09" stroke="#3A2A10" stroke-width="1.5"/>
+  <text x="142" y="655" class="mono text" font-size="21" font-weight="700">› /dream verify --min-confidence 0.8</text>
+  <rect x="1138" y="630" width="322" height="34" rx="10" fill="#15110A" stroke="#2E230F"/>
+  <text x="1160" y="653" class="mono dim" font-size="14">F2 model · F4 config · Ctrl+R trace</text>
 </svg>
