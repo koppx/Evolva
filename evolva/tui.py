@@ -1124,7 +1124,11 @@ if TEXTUAL_AVAILABLE:
             color: #D9B762;
         }
         #thinking.hidden {
-            display: none;
+            height: 0;
+            min-height: 0;
+            margin: 0;
+            padding: 0;
+            border: none;
         }
         #input {
             margin-top: 1;
