@@ -312,6 +312,8 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     assert parser.parse_args(["ask", "hi", "--image", "a.png", "--yes"]).image == ["a.png"]
     root_args = parser.parse_args([])
     assert root_args.cmd is None and root_args.chat is False
+    tui_args = parser.parse_args(["tui", "--yes", "--no-tools"])
+    assert tui_args.cmd == "tui" and tui_args.yes and tui_args.no_tools
     chat_args = parser.parse_args(["--chat", "--yes"])
     assert chat_args.cmd is None and chat_args.chat and chat_args.yes
     assert parser.parse_args(["mcp", "call", "s", "t", "{}", "--yes"]).mcp_cmd == "call"

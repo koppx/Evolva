@@ -496,7 +496,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chat", action="store_true", help="Start plain line-based chat instead of the default TUI")
     parser.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting in default TUI mode")
     parser.add_argument("--no-tools", action="store_true", help="Hide the TUI tool log panel at startup")
-    sub = parser.add_subparsers(dest="cmd", required=False, metavar="{ask,trace,eval,evolve,optimize,dream,loop,workflow,mcp}")
+    sub = parser.add_subparsers(dest="cmd", required=False, metavar="{tui,ask,trace,eval,evolve,optimize,dream,loop,workflow,mcp}")
+    tui_p = sub.add_parser("tui", help="Open the Evolva TUI workbench explicitly")
+    tui_p.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting")
+    tui_p.add_argument("--no-tools", action="store_true", help="Hide the tool log panel at startup")
+    tui_p.set_defaults(func=tui)
+
     once_p = sub.add_parser("ask", help="Automation: ask one question and exit")
     once_p.add_argument("message")
     once_p.add_argument("--image", action="append", help="Attach an image path or URL; can be repeated")
