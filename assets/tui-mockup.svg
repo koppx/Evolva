@@ -49,7 +49,7 @@
     <text x="0" y="144" class="mono gold" font-size="28" font-weight="700">│  ╰───●</text>
     <text x="0" y="180" class="mono gold" font-size="28" font-weight="700">╰───────●</text>
   </g>
-  <text x="410" y="196" class="mono gold" font-size="36" font-weight="800" letter-spacing="8">E V O L A</text>
+  <text x="410" y="196" class="mono gold" font-size="36" font-weight="800" letter-spacing="6">E V O L V A</text>
   <text x="410" y="235" class="mono dim" font-size="18">local_rule-mode · repo=/Users/bytedance/Documents/agent</text>
   <text x="410" y="270" class="mono muted" font-size="18">Trace · Eval · Dream · Loop · MCP · Memory · Guardrails</text>
   <line x1="120" y1="380" x2="1480" y2="380" stroke="#3A2A10" stroke-width="1"/>
