@@ -94,9 +94,9 @@ class EvolvaTUI:
         self._init_colors()
         stdscr.keypad(True)
         stdscr.timeout(100)
-        self._add_system("Evolva Workbench is ready. Type /help for commands, /exit to quit.")
+        self.status = "ready"
         if not self.agent.llm.available:
-            self._add_system("未检测到 OPENAI_API_KEY，已进入 local rule-mode；本地工具、Trace、Memory、Dream 仍可使用。")
+            self.status = "local mode · F4 config to connect a model"
 
         while True:
             self._drain_queue()
@@ -751,7 +751,7 @@ class EvolvaTUI:
 
         input_h = 3
         status_h = 1
-        title_h = 7
+        title_h = 6
         body_h = h - input_h - status_h - title_h
         tool_w = min(42, max(32, w // 3)) if self.show_tools and self.tool_logs and w >= 120 else 0
         chat_w = w - tool_w
@@ -766,38 +766,33 @@ class EvolvaTUI:
 
     def _draw_title(self, y: int, w: int) -> None:
         icon = [
-            "  ╭╮ ╭╮ ",
-            " ╭╯╰─╯╰╮",
-            " ╰╮╭─╮╭╯",
-            "  ╰╯ ╰╯ ",
+            "  ▋▋ ▋▋ ",
+            " ▐▛███▜▌",
+            "▝▜█████▛▘",
         ]
-        brand_x = 3
-        text_x = 18 if w >= 64 else 12
+        brand_x = 3 if w >= 72 else 1
+        text_x = 18 if w >= 72 else 12
         version = self._project_version()
         model = self._model_label()
         provider = self._provider_label()
         cwd = self._path_label(max(12, w - text_x - 2))
         title = f"Evolva v{version}"
-        subtitle = f"{provider} · {model}"
+        subtitle = f"{provider}_{model}" if provider != "local rule-mode" else "local_rule-mode"
         for idx, row in enumerate(icon):
-            if y + 1 + idx >= y + 5:
-                break
             self.stdscr.addnstr(y + 1 + idx, brand_x, row[: max(1, w - brand_x - 1)], max(1, w - brand_x - 1), self._color(6, curses.A_BOLD))
         self.stdscr.addnstr(y + 1, text_x, title[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(6, curses.A_BOLD))
         self.stdscr.addnstr(y + 2, text_x, subtitle[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(7))
         self.stdscr.addnstr(y + 3, text_x, cwd[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(7))
-        hints = "F4 config · F2 model · ^R trace · ^X context · ^T tools · /help"
-        self.stdscr.addnstr(y + 5, text_x, hints[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(3))
-        self.stdscr.addnstr(y + 6, 0, "─" * max(0, w - 1), w - 1, self._color(7))
+        self.stdscr.addnstr(y + 5, 0, "─" * max(0, w - 1), w - 1, self._color(7))
 
     def _draw_chat(self, y: int, x: int, h: int, w: int) -> None:
         lines: list[tuple[str, int]] = []
         for msg in self.messages:
             color = self._role_color(msg.role)
-            prefix = f"{self._role_label(msg.role)} {msg.ts} "
-            wrapped = self._wrap(prefix + msg.text, max(10, w - 2))
-            for part in wrapped:
-                lines.append((part, color))
+            prefix = self._role_label(msg.role)
+            wrapped = self._wrap(msg.text, max(10, w - len(prefix) - 2))
+            for idx, part in enumerate(wrapped):
+                lines.append(((prefix if idx == 0 else " " * len(prefix)) + part, color))
             lines.append(("", 0))
         if not lines:
             self._draw_empty_chat(y, x, h, w)
@@ -864,25 +859,16 @@ class EvolvaTUI:
         return out
 
     def _role_color(self, role: str) -> int:
-        return {"You": 1, "Agent": 2, "System": 3, "Error": 5}.get(role, 0)
+        return {"You": 7, "Agent": 6, "System": 7, "Error": 5}.get(role, 0)
 
     def _role_label(self, role: str) -> str:
-        return {"You": "YOU", "Agent": "EVA", "System": "SYS", "Error": "ERR"}.get(role, role.upper())
+        return {"You": "❯ ", "Agent": "⏺ ", "System": "• ", "Error": "✕ "}.get(role, f"{role.upper()} ")
 
     def _draw_empty_chat(self, y: int, x: int, h: int, w: int) -> None:
-        cards = [
-            "Evolva Agent Infra Workbench",
-            "",
-            "Start with /config wizard, then ask Evolva to inspect, plan, act, trace, evaluate, and evolve.",
-            "",
-            "Shortcuts: F4 provider · F2 model · Ctrl+R trace · Ctrl+X context · Ctrl+T tools",
-            "Commands: /mcp · /repo search · /loop list · /dream backlog · /trace list",
-        ]
-        start = y + max(0, (h - len(cards)) // 2)
-        left = x + max(2, (w - 58) // 2)
-        for idx, line in enumerate(cards[:h]):
-            attr = self._color(3, curses.A_BOLD) if idx == 0 else self._color(7)
-            self.stdscr.addnstr(start + idx, left, line[: max(1, w - left - 1)], max(1, w - left - 1), attr)
+        if h <= 3 or w <= 70:
+            return
+        hint = "F4 config · F2 model · ^R trace · ^X context · ^T tools · /help"
+        self.stdscr.addnstr(y + h - 1, x + 2, hint[: max(1, w - 4)], max(1, w - 4), self._color(7))
 
     def _safe_addch(self, y: int, x: int, ch: Any, attr: int = 0) -> None:
         try:

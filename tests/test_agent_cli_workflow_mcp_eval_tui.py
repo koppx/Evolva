@@ -433,6 +433,7 @@ def test_cli_loop_cmd_integration(monkeypatch, capsys, temp_config):
 def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, temp_config):
     monkeypatch.setattr("evolva.tui.AgentConfig", lambda: temp_config)
     app = EvolvaTUI(assume_yes=True, show_tools=True)
+    app.messages.clear()
     app.input_text = "/he"
     app._complete_command()
     assert app.input_text == "/help"
@@ -571,14 +572,14 @@ def test_tui_draws_polished_shell(monkeypatch, temp_config):
 
     app.stdscr = FakeScreen()
     app._draw_title(0, 100)
-    app._draw_chat(7, 0, 16, 70)
-    app._draw_tools(7, 70, 16, 30)
+    app._draw_chat(6, 0, 16, 70)
+    app._draw_tools(6, 70, 16, 30)
     app._draw_input(20, 100)
     rendered = "\n".join(writes)
     assert "Evolva v" in rendered
-    assert "local rule-mode" in rendered
+    assert "local_rule-mode" in rendered
     assert "pytest-of-bytedance" in rendered
-    assert "Evolva Agent Infra Workbench" in rendered
+    assert "▋▋ ▋▋" in rendered
     assert "Trace / Tool Stream" in rendered
     assert "No tool calls yet." in rendered
     assert "What's on your mind?" in rendered
