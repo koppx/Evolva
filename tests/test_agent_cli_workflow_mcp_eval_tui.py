@@ -589,7 +589,7 @@ def test_tui_draws_polished_shell(monkeypatch, temp_config):
     assert "Evolva v" in rendered
     assert "local_rule-mode" in rendered
     assert "pytest-of-bytedance" in rendered
-    assert "╭●╮   ╭●╮" in rendered
+    assert "██╗   ██╗" in rendered
     assert "Trace / Tool Stream" in rendered
     assert "No tool calls yet." in rendered
     assert "What's on your mind?" in rendered
