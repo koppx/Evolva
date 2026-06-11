@@ -541,18 +541,17 @@ def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, t
 def test_tui_status_bar_avoids_duplicate_ready(monkeypatch, temp_config):
     monkeypatch.setattr("evolva.tui.AgentConfig", lambda: temp_config)
     app = EvolvaTUI(assume_yes=True, show_tools=True)
-    captured = {}
+    writes = []
 
     class FakeScreen:
         def addnstr(self, y, x, text, width, attr=None):
-            captured["text"] = text
+            writes.append(str(text))
 
     app.stdscr = FakeScreen()
     app._draw_status(0, 80)
-    status = captured["text"].strip()
-    assert status.startswith("READY")
-    assert "READY  Ready" not in status
-    assert "rule-mode" in status and "tools:on" in status
+    status = " ".join(writes).strip()
+    assert "Ready  Ready" not in status
+    assert "rule-mode" in status
 
 
 def test_tui_draws_polished_shell(monkeypatch, temp_config):
@@ -572,13 +571,15 @@ def test_tui_draws_polished_shell(monkeypatch, temp_config):
 
     app.stdscr = FakeScreen()
     app._draw_title(0, 100)
-    app._draw_chat(3, 0, 16, 70)
-    app._draw_tools(3, 70, 16, 30)
+    app._draw_chat(7, 0, 16, 70)
+    app._draw_tools(7, 70, 16, 30)
     app._draw_input(20, 100)
     rendered = "\n".join(writes)
-    assert "EVOLVA  Agent Workbench" in rendered
-    assert "Memory · Skills · MCP · Trace · Dream · Loop" in rendered
-    assert "Evolva is a local-first Agent Harness." in rendered
-    assert "Tool Stream" in rendered
+    assert "Evolva v" in rendered
+    assert "local rule-mode" in rendered
+    assert "pytest-of-bytedance" in rendered
+    assert "Evolva Agent Infra Workbench" in rendered
+    assert "Trace / Tool Stream" in rendered
     assert "No tool calls yet." in rendered
-    assert "You ›" in rendered
+    assert "What's on your mind?" in rendered
+    assert "›" in rendered

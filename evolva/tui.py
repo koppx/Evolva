@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import curses
+import importlib.metadata
 import json
 import locale
 import os
@@ -77,6 +78,7 @@ class EvolvaTUI:
         self.confirmation_event: threading.Event | None = None
         self.confirmation_answer: bool | None = None
         self.stdscr: Any = None
+        self._cached_version: str | None = None
 
     def run(self) -> int:
         try:
@@ -747,11 +749,11 @@ class EvolvaTUI:
             stdscr.refresh()
             return
 
-        input_h = 4
+        input_h = 3
         status_h = 1
-        title_h = 3
+        title_h = 7
         body_h = h - input_h - status_h - title_h
-        tool_w = min(46, max(32, w // 3)) if self.show_tools and w >= 96 else 0
+        tool_w = min(42, max(32, w // 3)) if self.show_tools and self.tool_logs and w >= 120 else 0
         chat_w = w - tool_w
 
         self._draw_title(0, w)
@@ -763,14 +765,30 @@ class EvolvaTUI:
         stdscr.refresh()
 
     def _draw_title(self, y: int, w: int) -> None:
-        model = self.agent.config.model if self.agent.llm.available else "rule-mode"
-        mode = "LLM" if self.agent.llm.available else "LOCAL"
-        title = " EVOLVA  Agent Workbench "
-        meta = f" {mode} · {model} · Memory · Skills · MCP · Trace · Dream · Loop "
-        keys = " F2 model  F4 config  ^R traces  ^X context  ^T tools  /loop list  /help "
-        self.stdscr.addnstr(y, 0, title.ljust(w), w - 1, self._color(3, curses.A_BOLD | curses.A_REVERSE))
-        self.stdscr.addnstr(y + 1, 0, meta.ljust(w), w - 1, self._color(7))
-        self.stdscr.addnstr(y + 2, 0, keys.ljust(w), w - 1, self._color(6))
+        icon = [
+            "  ╭╮ ╭╮ ",
+            " ╭╯╰─╯╰╮",
+            " ╰╮╭─╮╭╯",
+            "  ╰╯ ╰╯ ",
+        ]
+        brand_x = 3
+        text_x = 18 if w >= 64 else 12
+        version = self._project_version()
+        model = self._model_label()
+        provider = self._provider_label()
+        cwd = self._path_label(max(12, w - text_x - 2))
+        title = f"Evolva v{version}"
+        subtitle = f"{provider} · {model}"
+        for idx, row in enumerate(icon):
+            if y + 1 + idx >= y + 5:
+                break
+            self.stdscr.addnstr(y + 1 + idx, brand_x, row[: max(1, w - brand_x - 1)], max(1, w - brand_x - 1), self._color(6, curses.A_BOLD))
+        self.stdscr.addnstr(y + 1, text_x, title[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(6, curses.A_BOLD))
+        self.stdscr.addnstr(y + 2, text_x, subtitle[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(7))
+        self.stdscr.addnstr(y + 3, text_x, cwd[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(7))
+        hints = "F4 config · F2 model · ^R trace · ^X context · ^T tools · /help"
+        self.stdscr.addnstr(y + 5, text_x, hints[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(3))
+        self.stdscr.addnstr(y + 6, 0, "─" * max(0, w - 1), w - 1, self._color(7))
 
     def _draw_chat(self, y: int, x: int, h: int, w: int) -> None:
         lines: list[tuple[str, int]] = []
@@ -796,7 +814,7 @@ class EvolvaTUI:
     def _draw_tools(self, y: int, x: int, h: int, w: int) -> None:
         for row in range(h):
             self._safe_addch(y + row, x, getattr(curses, "ACS_VLINE", "│"), self._color(6))
-        title = " Tool Stream "
+        title = " Trace / Tool Stream "
         self.stdscr.addnstr(y, x + 2, title.ljust(w - 3), w - 3, self._color(4, curses.A_BOLD))
         raw_lines: list[str] = []
         for log in self.tool_logs[-20:]:
@@ -809,30 +827,32 @@ class EvolvaTUI:
             self.stdscr.addnstr(y + i, x + 2, line.ljust(w - 3), w - 3, self._color(4 if self.tool_logs else 7))
 
     def _draw_status(self, y: int, w: int) -> None:
-        left = " BUSY " if self.busy else " READY "
-        if self.busy or self.status not in {"Ready", ""}:
-            detail = self.status
-        else:
-            model = self.agent.config.model if self.agent.llm.available else "rule-mode"
-            tools = "tools:on" if self.show_tools else "tools:off"
-            detail = f"{model} · {tools} · trace:{len(self.agent.tracer.list_runs(limit=1))} · /help"
-        status = f"{left} {detail}"
-        self.stdscr.addnstr(y, 0, status.ljust(w), w - 1, self._color(3, curses.A_REVERSE))
+        state = "thinking" if self.busy else "ready"
+        if self.status and self.status not in {"Ready", ""}:
+            state = self.status
+        left = f"  {self._provider_label()} · {self._model_label()}"
+        middle = f"  {state}"
+        right = f"{self._token_estimate()} tokens  "
+        line = left
+        if len(left) + len(middle) + len(right) < w:
+            line += middle
+        available = max(0, w - len(right) - 1)
+        self.stdscr.addnstr(y, 0, line[:available].ljust(available), available, self._color(7))
+        self.stdscr.addnstr(y, max(0, w - len(right) - 1), right[: max(0, w - 1)], max(0, min(len(right), w - 1)), self._color(7))
 
     def _draw_input(self, y: int, w: int) -> None:
-        self.stdscr.addnstr(y, 0, "─" * max(0, w - 1), w - 1, self._color(6))
-        prompt = "  You › "
-        self.stdscr.addnstr(y + 1, 0, prompt, w - 1, self._color(1, curses.A_BOLD))
+        self.stdscr.addnstr(y, 0, "─" * max(0, w - 1), w - 1, self._color(7))
+        prompt = "› "
+        self.stdscr.addnstr(y + 1, 1, prompt, max(1, w - 2), self._color(6, curses.A_BOLD))
         width = max(1, w - len(prompt) - 1)
         display = self.input_text[-width:]
-        placeholder = "Ask, run /loop, inspect /trace, or type /help" if not display else display
+        placeholder = "What's on your mind?" if not display else display
         if self.config_wizard is not None and self.config_wizard["fields"][self.config_wizard["index"]] == "api_key" and display:
             placeholder = "*" * min(len(display), width)
         attr = curses.A_NORMAL if display else self._color(7)
-        self.stdscr.addnstr(y + 1, len(prompt), placeholder.ljust(width), width, attr)
-        self.stdscr.move(y + 1, min(w - 2, len(prompt) + len(display)))
-        hint = "  Enter send · Tab complete · F4 config · Esc clear · PgUp/PgDn scroll · Ctrl+T tools"
-        self.stdscr.addnstr(y + 2, 0, hint.ljust(w), w - 1, self._color(7))
+        self.stdscr.addnstr(y + 1, 1 + len(prompt), placeholder.ljust(width), width, attr)
+        self.stdscr.move(y + 1, min(w - 2, 1 + len(prompt) + len(display)))
+        self.stdscr.addnstr(y + 2, 0, "─" * max(0, w - 1), w - 1, self._color(7))
 
     def _wrap(self, text: str, width: int) -> list[str]:
         out: list[str] = []
@@ -851,15 +871,12 @@ class EvolvaTUI:
 
     def _draw_empty_chat(self, y: int, x: int, h: int, w: int) -> None:
         cards = [
-            "Evolva is a local-first Agent Harness.",
+            "Evolva Agent Infra Workbench",
             "",
-            "Try:",
-            "  /config wizard     configure model provider in the TUI",
-            "  /loop list         inspect repeatable agent loops",
-            "  /dream             inspect self-evolution candidates",
-            "  /trace list        inspect recent runs",
-            "  /mcp               manage MCP servers",
-            "  /repo search agent search the indexed codebase",
+            "Start with /config wizard, then ask Evolva to inspect, plan, act, trace, evaluate, and evolve.",
+            "",
+            "Shortcuts: F4 provider · F2 model · Ctrl+R trace · Ctrl+X context · Ctrl+T tools",
+            "Commands: /mcp · /repo search · /loop list · /dream backlog · /trace list",
         ]
         start = y + max(0, (h - len(cards)) // 2)
         left = x + max(2, (w - 58) // 2)
@@ -872,6 +889,42 @@ class EvolvaTUI:
             self.stdscr.addch(y, x, ch, attr)
         except curses.error:
             pass
+
+    def _project_version(self) -> str:
+        if self._cached_version is not None:
+            return self._cached_version
+        try:
+            self._cached_version = importlib.metadata.version("evolva")
+        except importlib.metadata.PackageNotFoundError:
+            self._cached_version = "0.1.0"
+        return self._cached_version
+
+    def _provider_label(self) -> str:
+        if not self.agent.llm.available:
+            return "local rule-mode"
+        base_url = self.agent.config.base_url.rstrip("/")
+        if "openai" in base_url.lower():
+            return "openai"
+        if "ark" in base_url.lower() or "volc" in base_url.lower():
+            return "ark"
+        return base_url.split("//")[-1].split("/")[0] or "provider"
+
+    def _model_label(self) -> str:
+        return self.agent.config.model if self.agent.llm.available else "rule-mode"
+
+    def _path_label(self, width: int) -> str:
+        path = str(self.agent.config.root)
+        home = os.path.expanduser("~")
+        if path.startswith(home):
+            path = "~" + path[len(home):]
+        if len(path) <= width:
+            return path
+        return "…" + path[-max(1, width - 1):]
+
+    def _token_estimate(self) -> int:
+        text = "\n".join(msg.text for msg in self.messages) + "\n" + self.input_text
+        # Fast local approximation for the footer; exact provider tokenization is intentionally optional.
+        return max(0, len(text) // 4)
 
 
 def run_tui(assume_yes: bool = False, show_tools: bool = True) -> int:
