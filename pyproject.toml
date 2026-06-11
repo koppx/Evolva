@@ -16,6 +16,13 @@ dev = ["pytest>=8.0"]
 [project.scripts]
 evolva = "evolva.cli:main"
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+package = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
