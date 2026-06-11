@@ -939,6 +939,7 @@ class EvolvaInlineTUI:
         self.app = EvolvaTUI(assume_yes=assume_yes, show_tools=show_tools)
         self.show_tools = show_tools
         self._printed_messages = 0
+        self._interrupt_armed = False
 
     def run(self) -> int:
         self._print_header()
@@ -947,11 +948,19 @@ class EvolvaInlineTUI:
         while True:
             try:
                 line = input(self._primary("› ")).strip()
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 print()
                 return 0
+            except KeyboardInterrupt:
+                if self._interrupt_armed:
+                    print(f"\n{self._dim('bye · Evolva session closed')}")
+                    return 0
+                self._interrupt_armed = True
+                print(f"\n{self._dim('Press Ctrl+C again to exit, or type /exit.')}")
+                continue
             if not line:
                 continue
+            self._interrupt_armed = False
             if line in {"/exit", "/quit"}:
                 return 0
             if line == "/config wizard":

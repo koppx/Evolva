@@ -14,7 +14,7 @@ from evolva.agent.tracing import TraceRecorder
 from evolva.cli import build_parser, dream_cmd, evolve_cmd, handle_command, loop_cmd, main, mcp_cmd, once, optimize_cmd
 from evolva.eval.harness import EvalHarness, EvalResult, render_gate, render_results
 from evolva.eval.scorers import ScoreCheck, ScorerRegistry
-from evolva.tui import EvolvaTUI, TUIConfirmation
+from evolva.tui import EvolvaInlineTUI, EvolvaTUI, TUIConfirmation
 from evolva.workflow.engine import WorkflowEngine
 
 
@@ -594,3 +594,32 @@ def test_tui_draws_polished_shell(monkeypatch, temp_config):
     assert "No tool calls yet." in rendered
     assert "What's on your mind?" in rendered
     assert "›" in rendered
+
+
+def test_inline_tui_ctrl_c_requires_second_interrupt(monkeypatch, capsys, temp_config):
+    monkeypatch.setattr("evolva.tui.AgentConfig", lambda: temp_config)
+    events = iter([KeyboardInterrupt, "/exit"])
+
+    def fake_input(prompt):
+        event = next(events)
+        if event is KeyboardInterrupt:
+            raise KeyboardInterrupt
+        return event
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    app = EvolvaInlineTUI(assume_yes=True)
+    assert app.run() == 0
+    assert "Press Ctrl+C again to exit" in capsys.readouterr().out
+
+
+def test_inline_tui_second_ctrl_c_exits(monkeypatch, capsys, temp_config):
+    monkeypatch.setattr("evolva.tui.AgentConfig", lambda: temp_config)
+
+    def fake_input(prompt):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    app = EvolvaInlineTUI(assume_yes=True)
+    app._interrupt_armed = True
+    assert app.run() == 0
+    assert "Evolva session closed" in capsys.readouterr().out
