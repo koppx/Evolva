@@ -127,6 +127,7 @@ class EvolvaTUI:
             curses.init_pair(5, curses.COLOR_RED, -1)     # errors
             curses.init_pair(6, curses.COLOR_BLUE, -1)    # panel chrome
             curses.init_pair(7, curses.COLOR_WHITE, -1)   # muted text
+            curses.init_pair(8, curses.COLOR_YELLOW, -1)  # Evolva gold
         except (curses.error, ValueError):
             # Some pseudo terminals support curses drawing but not color pairs.
             # Keep TUI startup resilient and fall back to A_NORMAL rendering.
@@ -767,13 +768,15 @@ class EvolvaTUI:
 
     def _draw_title(self, y: int, w: int) -> None:
         icon = [
-            "╭╮  ╭╮",
-            " ╰╮╭╯ ",
-            " ╭╯╰╮ ",
-            "╰╯  ╰╯",
+            "╭●╮   ╭●╮",
+            " ╲╰╮ ╭╯╱ ",
+            "  ╲╰─╯╱  ",
+            "  ╱╭─╮╲  ",
+            " ╱╭╯ ╰╮╲ ",
+            "╰●╯   ╰●╯",
         ]
-        brand_x = 3 if w >= 72 else 1
-        text_x = 18 if w >= 72 else 12
+        brand_x = 2 if w >= 72 else 1
+        text_x = 20 if w >= 72 else 14
         version = self._project_version()
         model = self._model_label()
         provider = self._provider_label()
@@ -781,11 +784,11 @@ class EvolvaTUI:
         title = f"Evolva v{version}"
         subtitle = f"{provider}_{model}" if provider != "local rule-mode" else "local_rule-mode"
         for idx, row in enumerate(icon):
-            self.stdscr.addnstr(y + 1 + idx, brand_x, row[: max(1, w - brand_x - 1)], max(1, w - brand_x - 1), self._color(6, curses.A_BOLD))
-        self.stdscr.addnstr(y + 1, text_x, title[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(6, curses.A_BOLD))
+            self.stdscr.addnstr(y + idx, brand_x, row[: max(1, w - brand_x - 1)], max(1, w - brand_x - 1), self._color(8, curses.A_BOLD))
+        self.stdscr.addnstr(y + 1, text_x, title[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(8, curses.A_BOLD))
         self.stdscr.addnstr(y + 2, text_x, subtitle[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(7))
         self.stdscr.addnstr(y + 3, text_x, cwd[: max(1, w - text_x - 1)], max(1, w - text_x - 1), self._color(7))
-        self.stdscr.addnstr(y + 5, 0, "─" * max(0, w - 1), w - 1, self._color(7))
+        self.stdscr.addnstr(y + 5, 0, "─" * max(0, w - 1), w - 1, self._color(8))
 
     def _draw_chat(self, y: int, x: int, h: int, w: int) -> None:
         lines: list[tuple[str, int]] = []
@@ -861,7 +864,7 @@ class EvolvaTUI:
         return out
 
     def _role_color(self, role: str) -> int:
-        return {"You": 7, "Agent": 6, "System": 7, "Error": 5}.get(role, 0)
+        return {"You": 7, "Agent": 8, "System": 7, "Error": 5}.get(role, 0)
 
     def _role_label(self, role: str) -> str:
         return {"You": "❯ ", "Agent": "⏺ ", "System": "• ", "Error": "✕ "}.get(role, f"{role.upper()} ")
@@ -992,12 +995,14 @@ class EvolvaInlineTUI:
         model = self.app._model_label()
         subtitle = f"{provider}_{model}" if provider != "local rule-mode" else "local_rule-mode"
         cwd = self.app._path_label(96)
-        icon = ["╭╮  ╭╮", " ╰╮╭╯ ", " ╭╯╰╮ ", "╰╯  ╰╯"]
+        icon = ["╭●╮   ╭●╮", " ╲╰╮ ╭╯╱ ", "  ╲╰─╯╱  ", "  ╱╭─╮╲  ", " ╱╭╯ ╰╮╲ ", "╰●╯   ╰●╯"]
         rows = [
             (icon[0], f"Evolva v{version}"),
             (icon[1], subtitle),
             (icon[2], cwd),
             (icon[3], ""),
+            (icon[4], ""),
+            (icon[5], ""),
         ]
         print()
         for left, right in rows:
@@ -1056,7 +1061,7 @@ class EvolvaInlineTUI:
         return f"\033[{code}m{text}\033[0m"
 
     def _primary(self, text: str) -> str:
-        return self._ansi("94;1", text)
+        return self._ansi("38;5;220;1", text)
 
     def _dim(self, text: str) -> str:
         return self._ansi("90", text)
