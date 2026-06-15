@@ -1,0 +1,82 @@
+<svg width="1440" height="760" viewBox="0 0 1440 760" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Loop Engineering runtime safety and feedback loop</title>
+  <desc id="desc">Loop execution is bounded by validation, gates, budgets, trace, eval, and self-evolution feedback.</desc>
+  <defs>
+    <radialGradient id="rad" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(720 380) rotate(90) scale(430 620)">
+      <stop stop-color="#202A41"/>
+      <stop offset="1" stop-color="#080A10"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFF1B8"/><stop offset="1" stop-color="#B17A25"/></linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#90E7FF"/><stop offset="1" stop-color="#4E6FFF"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#83F6C5"/><stop offset="1" stop-color="#238C68"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-25%" width="140%" height="160%"><feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000" flood-opacity=".36"/></filter>
+    <style>
+      .title{font:800 50px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#FFF7D6;letter-spacing:-1.2px}
+      .subtitle{font:500 22px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#BAC3D3}
+      .label{font:800 25px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#FFF7D6}
+      .body{font:500 17px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#CCD5E3}
+      .tiny{font:800 13px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#11151F;letter-spacing:.5px}
+      .mono{font:700 16px 'SFMono-Regular',Consolas,monospace;fill:#EAF0FA}
+      .card{fill:#111827;stroke:#2E3850;stroke-width:1.5;filter:url(#shadow)}
+      .arrow{stroke:#E2B756;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;marker-end:url(#arrowHead)}
+      .loop{stroke:#E2B756;stroke-width:5;stroke-linecap:round;stroke-dasharray:2 13;opacity:.82;marker-end:url(#arrowHead)}
+    </style>
+    <marker id="arrowHead" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto"><path d="M2 2 L10 6 L2 10 Z" fill="#E2B756"/></marker>
+  </defs>
+  <rect width="1440" height="760" fill="url(#rad)"/>
+  <text x="70" y="86" class="title">Production Loop Runtime</text>
+  <text x="70" y="124" class="subtitle">Every run is bounded, gated, traceable, and reusable — no infinite autonomous loop.</text>
+
+  <circle cx="720" cy="405" r="226" fill="#0D1320" stroke="#2D3850" stroke-width="2"/>
+  <path class="loop" d="M720 156 C855 156 966 267 966 405 C966 543 855 654 720 654 C585 654 474 543 474 405 C474 267 585 156 720 156"/>
+
+  <g transform="translate(566 300)">
+    <rect width="308" height="210" rx="34" fill="url(#gold)" filter="url(#shadow)"/>
+    <text x="44" y="68" style="font:900 34px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#11151F">LoopSpec</text>
+    <text x="44" y="105" style="font:700 18px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#24200F">phases · gates · artifacts</text>
+    <text x="44" y="137" style="font:700 18px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#24200F">allowlist · budgets</text>
+    <rect x="44" y="158" width="220" height="30" rx="15" fill="#11151F" opacity=".92"/>
+    <text x="64" y="179" class="mono">confirm before run</text>
+  </g>
+
+  <g transform="translate(90 230)">
+    <rect class="card" width="305" height="150" rx="26"/>
+    <rect x="24" y="24" width="88" height="30" rx="15" fill="url(#cyan)"/>
+    <text x="41" y="45" class="tiny">VALIDATE</text>
+    <text x="24" y="84" class="label">Dry-run Gate</text>
+    <text x="24" y="116" class="body">DAG、工具、Policy、命令白名单</text>
+  </g>
+  <path class="arrow" d="M397 305 H517"/>
+
+  <g transform="translate(1045 230)">
+    <rect class="card" width="305" height="150" rx="26"/>
+    <rect x="24" y="24" width="78" height="30" rx="15" fill="url(#gold)"/>
+    <text x="43" y="45" class="tiny">GATES</text>
+    <text x="24" y="84" class="label">Quality Gates</text>
+    <text x="24" y="116" class="body">phase_success / command_success</text>
+  </g>
+  <path class="arrow" d="M924 305 H1032"/>
+
+  <g transform="translate(1045 475)">
+    <rect class="card" width="305" height="150" rx="26"/>
+    <rect x="24" y="24" width="86" height="30" rx="15" fill="url(#green)"/>
+    <text x="43" y="45" class="tiny">BUDGET</text>
+    <text x="24" y="84" class="label">Bounded Run</text>
+    <text x="24" y="116" class="body">时间、工具调用、命令、文件改动</text>
+  </g>
+  <path class="arrow" d="M1035 548 H925"/>
+
+  <g transform="translate(90 475)">
+    <rect class="card" width="305" height="150" rx="26"/>
+    <rect x="24" y="24" width="76" height="30" rx="15" fill="#F3D373"/>
+    <text x="42" y="45" class="tiny">TRACE</text>
+    <text x="24" y="84" class="label">Evidence Loop</text>
+    <text x="24" y="116" class="body">Trace / Eval / Dream / Promote</text>
+  </g>
+  <path class="arrow" d="M518 548 H408"/>
+
+  <g transform="translate(500 662)">
+    <rect width="440" height="46" rx="23" fill="#151D2B" stroke="#3B465F"/>
+    <text x="30" y="30" class="mono">Resume failed runs via phase fingerprint</text>
+  </g>
+</svg>

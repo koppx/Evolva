@@ -38,6 +38,7 @@ BUILTIN_LOOP_SPECS: dict[str, dict] = {
         "name": "Eval Regression Loop",
         "description": "Run the smoke eval gate and feed the resulting evidence into Dream.",
         "trigger": {"type": "manual"},
+        "command_allowlist": [".venv/bin/python -m pytest -q tests/test_dream.py"],
         "phases": [
             {"id": "eval", "type": "tool", "tool": "shell", "args": {"command": ".venv/bin/python -m pytest -q tests/test_dream.py", "timeout": 120}},
             {"id": "dream", "type": "dream", "action": "run", "depends_on": ["eval"], "continue_on_error": True},
@@ -50,6 +51,7 @@ BUILTIN_LOOP_SPECS: dict[str, dict] = {
         "name": "Release Readiness Loop",
         "description": "Check tests, CLI help, and README surfaces before a release.",
         "trigger": {"type": "manual"},
+        "command_allowlist": [".venv/bin/evolva --help", ".venv/bin/python -m pytest -q"],
         "phases": [
             {"id": "help", "type": "tool", "tool": "shell", "args": {"command": ".venv/bin/evolva --help", "timeout": 30}},
             {"id": "tests", "type": "tool", "tool": "shell", "args": {"command": ".venv/bin/python -m pytest -q", "timeout": 180}, "depends_on": ["help"]},

@@ -1,0 +1,60 @@
+Loop Draft: draft_20260615_161533_c481cf5f
+- Status: awaiting_confirmation
+- Intent: web_feature
+- Goal: 交付一个可验证的网页/前端功能：做一个响应式 landing page，有 hero、pricing、FAQ --show-spec
+
+Phases:
+1. 上下文扫描 [context_scan/agent]
+   - 识别项目结构、框架、可用命令和风险
+   - Output: 相关文件、框架、命令候选
+2. 设计/实施计划 [design_plan/agent] deps=context_scan
+   - 把需求转成明确验收标准和文件级计划
+   - Output: 阶段计划和验收标准
+3. 实施 [implementation/agent] deps=design_plan
+   - 按确认后的计划进行最小必要改动
+   - Output: 代码/文档/配置改动
+4. 自动验证 [verification/tool] deps=implementation
+   - 运行安全 allowlist 内的检查命令
+   - Output: 验证命令结果
+5. 最终报告 [final_report/agent] deps=verification
+   - 汇总改动、验证、风险和运行方式
+   - Output: Loop report
+
+Checkpoints:
+- [required] 设计/实施计划必须生成并可读。 (phase_success after design_plan)
+- [required] 验证命令成功：npm run build (command_success after verification) command=`npm run build`
+- [required] 最终报告必须包含结果、验证证据和剩余风险。 (phase_success after final_report)
+- [required] 页面关键区块和移动端表现需要人工或浏览器检查确认。 (manual_confirmation after implementation)
+
+Execution limits:
+- max_total_phases: 10
+- max_repair_rounds: 1
+- max_phase_retries: 1
+- max_duration_seconds: 1800
+- max_tool_calls: 35
+- max_command_runs: 8
+- max_file_changes: 25
+
+Command candidates / allowlist:
+- npm run build
+- npm run lint
+- npm run test
+
+Assumptions:
+- 默认先生成计划和 Loop spec，不直接执行。
+- 执行前会先进行 strict validate / dry-run。
+- 只使用模板内的安全命令候选，所有 shell 命令必须 allowlist。
+- 会先识别当前项目的前端框架和可用构建命令，再实施页面或组件改动。
+
+Risks:
+- 生成计划来自启发式模板，执行前需要用户确认。
+- 仓库实际命令可能不同，dry-run/上下文扫描应提示替换。
+- 视觉质量和响应式效果需要浏览器或人工验收。
+- 如果项目不是 npm 前端项目，需要把验证命令改为实际命令。
+
+Next actions:
+- /loop revise <修改意见>
+- /loop confirm        # strict validate + dry-run，不执行
+- /loop execute        # 仅在 confirm 通过后执行
+- /loop save <name>    # 保存为可复用 Loop
+- /loop cancel

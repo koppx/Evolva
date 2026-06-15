@@ -23,6 +23,9 @@ class LoopPhase:
     depends_on: list[str] = field(default_factory=list)
     continue_on_error: bool = False
     promotion: bool = False
+    timeout: int | None = None
+    retries: int = 0
+    allowlist: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], *, previous_id: str | None = None, idx: int = 0) -> "LoopPhase":
@@ -44,6 +47,9 @@ class LoopPhase:
             depends_on=deps,
             continue_on_error=bool(data.get("continue_on_error", False)),
             promotion=bool(data.get("promotion", False)),
+            timeout=int(data["timeout"]) if data.get("timeout") is not None else None,
+            retries=int(data.get("retries", 0)),
+            allowlist=[str(item) for item in data.get("allowlist", data.get("command_allowlist", []))],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -58,6 +64,9 @@ class LoopGate:
     type: str = "phase_success"
     expected_contains: str = ""
     command: str = ""
+    cwd: str = "."
+    timeout: int | None = None
+    allowlist: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "LoopGate":
@@ -66,6 +75,9 @@ class LoopGate:
             type=str(data.get("type", "phase_success")),
             expected_contains=str(data.get("expected_contains", "")),
             command=str(data.get("command", "")),
+            cwd=str(data.get("cwd", ".")),
+            timeout=int(data["timeout"]) if data.get("timeout") is not None else None,
+            allowlist=[str(item) for item in data.get("allowlist", data.get("command_allowlist", []))],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -83,6 +95,8 @@ class LoopSpec:
     phases: list[LoopPhase] = field(default_factory=list)
     gates: list[LoopGate] = field(default_factory=list)
     artifacts: list[str] = field(default_factory=list)
+    command_allowlist: list[str] = field(default_factory=list)
+    execution_limits: dict[str, Any] = field(default_factory=dict)
     version: str = "1"
 
     @classmethod
@@ -116,6 +130,8 @@ class LoopSpec:
             phases=phases,
             gates=gates,
             artifacts=[str(item) for item in data.get("artifacts", [])],
+            command_allowlist=[str(item) for item in data.get("command_allowlist", [])],
+            execution_limits=dict(data.get("execution_limits") or {}),
             version=str(data.get("version", "1")),
         )
 
@@ -159,6 +175,9 @@ class LoopPhaseResult:
     started_at: float = 0.0
     ended_at: float = 0.0
     gate_results: list[dict[str, Any]] = field(default_factory=list)
+    attempts: int = 1
+    attempt_results: list[dict[str, Any]] = field(default_factory=list)
+    artifacts: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def duration_ms(self) -> int:
@@ -183,6 +202,10 @@ class LoopRunResult:
     phase_results: list[LoopPhaseResult] = field(default_factory=list)
     outputs: dict[str, str] = field(default_factory=dict)
     artifacts: list[str] = field(default_factory=list)
+    artifact_records: list[dict[str, Any]] = field(default_factory=list)
+    trace_run_id: str = ""
+    spec_fingerprint: str = ""
+    phase_fingerprints: dict[str, str] = field(default_factory=dict)
     started_at: float = 0.0
     ended_at: float = 0.0
     path: str = ""

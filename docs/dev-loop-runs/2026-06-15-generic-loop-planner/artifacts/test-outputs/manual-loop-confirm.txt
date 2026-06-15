@@ -1,0 +1,5 @@
+Loop confirmation: draft_20260615_161533_c481cf5f
+- Status: ready
+- Dry-run: ok
+- Execution: not run
+Next: /loop execute or /loop save <name>

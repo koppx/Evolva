@@ -1,0 +1,78 @@
+{
+  "run_id": "loop_20260615_151514_3de1b869",
+  "loop_id": "eval-regression-loop",
+  "ok": true,
+  "status": "completed",
+  "phase_results": [
+    {
+      "phase_id": "eval",
+      "type": "tool",
+      "ok": true,
+      "output": "............                                                             [100%]\n12 passed in 1.13s",
+      "started_at": 1781507714.574212,
+      "ended_at": 1781507717.3013241,
+      "gate_results": [
+        {
+          "gate": "phase_success",
+          "after": "eval",
+          "ok": true
+        }
+      ],
+      "attempts": 1,
+      "attempt_results": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "output": "............                                                             [100%]\n12 passed in 1.13s",
+          "started_at": 1781507714.574213,
+          "ended_at": 1781507717.3013241,
+          "duration_ms": 2727
+        }
+      ],
+      "artifacts": [],
+      "duration_ms": 2727
+    },
+    {
+      "phase_id": "dream",
+      "type": "dream",
+      "ok": true,
+      "output": "Dream report\n- ID: dream_20260615_151517\n- Mode: analyze\n- Stages: collect -> hypothesize -> critique -> candidate -> verify -> archive\n- Inspected: traces=20, eval_results=1, lessons=0, proposals=0\n- Evidence: 1\n- Hypotheses: 1\n- Candidates: 0\n- Actions: 1\n- Rejections: 1\n- Insights: 1\n- Applied: 0\n- Report: /Users/bytedance/Documents/agent/evolva/dreams/dream_20260615_151517.json\n- dream_bootstrap_evolution_loop [workflow/0.64] Hypothesis: strengthen completion workflow\n  The evolution loop needs more trace/eval evidence before it should write durable lessons.\n  Next: Observe only; bootstrap signals are intentionally below the apply threshold.\n  Evidence: trace_inspected=20, eval_inspected=1\nActions:\n- act_bootstrap_evolution_loop [observe_only] Keep collecting evidence\nRejected by drift guard:\n- hyp_bootstrap_evolution_loop: confidence 0.64 < 0.72; bootstrap signal is observe-only",
+      "started_at": 1781507717.302322,
+      "ended_at": 1781507717.317389,
+      "gate_results": [],
+      "attempts": 1,
+      "attempt_results": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "output": "Dream report\n- ID: dream_20260615_151517\n- Mode: analyze\n- Stages: collect -> hypothesize -> critique -> candidate -> verify -> archive\n- Inspected: traces=20, eval_results=1, lessons=0, proposals=0\n- Evidence: 1\n- Hypotheses: 1\n- Candidates: 0\n- Actions: 1\n- Rejections: 1\n- Insights: 1\n- Applied: 0\n- Report: /Users/bytedance/Documents/agent/evolva/dreams/dream_20260615_151517.json\n- dream_bootstrap_evolution_loop [workflow/0.64] Hypothesis: strengthen completion workflow\n  The evolution loop needs more trace/eval evidence before it should write durable lessons.\n  Next: Observe only; bootstrap signals are intentionally below the apply threshold.\n  Evidence: trace_inspected=20, eval_inspected=1\nActions:\n- act_bootstrap_evolution_loop [observe_only] Keep collecting evidence\nRejected by drift guard:\n- hyp_bootstrap_evolution_loop: confidence 0.64 < 0.72; bootstrap signal is observe-only",
+          "started_at": 1781507717.302326,
+          "ended_at": 1781507717.317389,
+          "duration_ms": 15
+        }
+      ],
+      "artifacts": [],
+      "duration_ms": 15
+    }
+  ],
+  "outputs": {
+    "eval": "............                                                             [100%]\n12 passed in 1.13s",
+    "dream": "Dream report\n- ID: dream_20260615_151517\n- Mode: analyze\n- Stages: collect -> hypothesize -> critique -> candidate -> verify -> archive\n- Inspected: traces=20, eval_results=1, lessons=0, proposals=0\n- Evidence: 1\n- Hypotheses: 1\n- Candidates: 0\n- Actions: 1\n- Rejections: 1\n- Insights: 1\n- Applied: 0\n- Report: /Users/bytedance/Documents/agent/evolva/dreams/dream_20260615_151517.json\n- dream_bootstrap_evolution_loop [workflow/0.64] Hypothesis: strengthen completion workflow\n  The evolution loop needs more trace/eval evidence before it should write durable lessons.\n  Next: Observe only; bootstrap signals are intentionally below the apply threshold.\n  Evidence: trace_inspected=20, eval_inspected=1\nActions:\n- act_bootstrap_evolution_loop [observe_only] Keep collecting evidence\nRejected by drift guard:\n- hyp_bootstrap_evolution_loop: confidence 0.64 < 0.72; bootstrap signal is observe-only"
+  },
+  "artifacts": [
+    "eval_result",
+    "trace",
+    "dream_candidate"
+  ],
+  "artifact_records": [],
+  "trace_run_id": "run_20260615_151514_70e3db7f",
+  "spec_fingerprint": "557e98bbc5fc7b6fd312df9ac88a9c4782f74cb35938b62d028c2cabfd487ac9",
+  "phase_fingerprints": {
+    "eval": "b3ab8ca868d2ea1febf7db1b9eb5b18b64470888d7d35a0615786bca7d6025c2",
+    "dream": "06f9bdf518add3fa20ddd03ddf473c836583e8ba772ebcdd7602fac39e1dc69c"
+  },
+  "started_at": 1781507714.5732539,
+  "ended_at": 1781507717.31832,
+  "path": "/Users/bytedance/Documents/agent/evolva/loop_runs/loop_20260615_151514_3de1b869.json",
+  "duration_ms": 2745
+}

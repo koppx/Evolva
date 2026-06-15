@@ -146,30 +146,42 @@ class EvolvaAgent:
         return engine.render(report), report.to_dict()
 
     def chat(self, user_message: str, image_sources: list[str] | None = None) -> TurnResult:
-        self.tracer.start(
-            user_message,
-            meta={
-                "runtime": "langgraph",
-                "graph_nodes": self.graph_nodes(),
-                "model": self.config.model,
-                "llm_available": self.llm.available,
-                "max_steps": self.config.max_steps,
-                "images": image_sources or [],
-            },
-        )
+        meta = {
+            "runtime": "langgraph",
+            "graph_nodes": self.graph_nodes(),
+            "model": self.config.model,
+            "llm_available": self.llm.available,
+            "max_steps": self.config.max_steps,
+            "images": image_sources or [],
+        }
+        owns_trace = self.tracer.current is None
+        if owns_trace:
+            self.tracer.start(user_message, meta=meta)
+        else:
+            self.tracer.event("agent_chat_start", {"user_input": user_message, **meta})
         if not self.llm.available:
             if image_sources:
                 result = TurnResult("未配置 OPENAI_API_KEY，当前规则模式无法理解图片。请配置支持视觉的 OpenAI-compatible 模型后重试。")
-                self.tracer.end(result.answer, status="fallback_no_vision")
+                if owns_trace:
+                    self.tracer.end(result.answer, status="fallback_no_vision")
+                else:
+                    self.tracer.event("agent_chat_end", {"status": "fallback_no_vision", "answer": result.answer[:4000]})
                 return result
             result = self._fallback_chat(user_message)
-            self.tracer.end(result.answer, status="fallback")
+            if owns_trace:
+                self.tracer.end(result.answer, status="fallback")
+            else:
+                self.tracer.event("agent_chat_end", {"status": "fallback", "answer": result.answer[:4000]})
             return result
 
         state = self.graph_runtime.run(user_message, image_sources=image_sources)
         final = state.get("final", "")
         failed_tools = state.get("failed_tools", [])
-        self.tracer.end(final, status="completed" if not failed_tools else "completed_with_tool_failures")
+        status = "completed" if not failed_tools else "completed_with_tool_failures"
+        if owns_trace:
+            self.tracer.end(final, status=status)
+        else:
+            self.tracer.event("agent_chat_end", {"status": status, "answer": final[:4000], "failed_tools": failed_tools})
         return TurnResult(answer=final, tool_logs=state.get("tool_logs", []), failed_tools=failed_tools)
 
     def graph_nodes(self) -> list[str]:

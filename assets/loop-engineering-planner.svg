@@ -1,0 +1,132 @@
+<svg width="1440" height="760" viewBox="0 0 1440 760" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Loop Engineering: LLM-first planning</title>
+  <desc id="desc">A natural-language request is decomposed by an LLM planner, sanitized, reviewed by the user, validated, and converted into an executable loop.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1440" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#080A10"/>
+      <stop offset="0.52" stop-color="#101522"/>
+      <stop offset="1" stop-color="#17110B"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFF1B8"/>
+      <stop offset="0.45" stop-color="#E2B756"/>
+      <stop offset="1" stop-color="#9A6B22"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#7EF3C1"/>
+      <stop offset="1" stop-color="#1D8F67"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#9CC8FF"/>
+      <stop offset="1" stop-color="#4E6FFF"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="170%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <style>
+      .title{font:800 52px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#FFF7D6;letter-spacing:-1.5px}
+      .subtitle{font:500 22px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#B9C0CE}
+      .label{font:800 23px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#FFF6D4}
+      .body{font:500 17px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#CAD2DF}
+      .small{font:700 14px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:#0D1018;letter-spacing:.4px}
+      .mono{font:700 18px 'SFMono-Regular',Consolas,monospace;fill:#EAF0FA}
+      .muted{fill:#8E98AA}
+      .card{fill:#121827;stroke:#2B3348;stroke-width:1.4;filter:url(#shadow)}
+      .pill{fill:#E4B95B}
+      .arrow{stroke:#E2B756;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;marker-end:url(#arrowHead)}
+    </style>
+    <marker id="arrowHead" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+      <path d="M2 2 L10 6 L2 10 Z" fill="#E2B756"/>
+    </marker>
+  </defs>
+  <rect width="1440" height="760" fill="url(#bg)"/>
+  <circle cx="1270" cy="110" r="190" fill="#E2B756" opacity="0.08"/>
+  <circle cx="160" cy="660" r="260" fill="#4E6FFF" opacity="0.08"/>
+  <path d="M0 690 C260 610 420 735 680 655 C930 580 1060 660 1440 560" stroke="#E2B756" stroke-opacity="0.16" stroke-width="2"/>
+
+  <text x="70" y="86" class="title">Loop Engineering</text>
+  <text x="70" y="124" class="subtitle">LLM-first planning + safe execution gates for real engineering workflows</text>
+
+  <g transform="translate(70 185)">
+    <rect class="card" width="245" height="145" rx="24"/>
+    <rect x="24" y="24" width="66" height="30" rx="15" fill="url(#blue)"/>
+    <text x="38" y="45" class="small">INPUT</text>
+    <text x="24" y="82" class="label">一句话需求</text>
+    <text x="24" y="112" class="body">/loop 做一个网页</text>
+    <text x="24" y="137" class="body muted">不会直接执行</text>
+  </g>
+
+  <path class="arrow" d="M330 257 H415"/>
+
+  <g transform="translate(430 160)">
+    <rect class="card" width="295" height="195" rx="28"/>
+    <rect x="25" y="24" width="88" height="30" rx="15" fill="url(#gold)"/>
+    <text x="40" y="45" class="small">LLM FIRST</text>
+    <text x="25" y="84" class="label">智能拆解</text>
+    <text x="25" y="116" class="body">目标 / 阶段 DAG / 检查点</text>
+    <text x="25" y="144" class="body">命令候选 / 风险 / 预算</text>
+    <text x="25" y="172" class="body muted">不可用时 heuristic fallback</text>
+  </g>
+
+  <path class="arrow" d="M744 257 H829"/>
+
+  <g transform="translate(845 160)">
+    <rect class="card" width="255" height="195" rx="28"/>
+    <rect x="25" y="24" width="94" height="30" rx="15" fill="url(#green)"/>
+    <text x="40" y="45" class="small">SANITIZE</text>
+    <text x="25" y="84" class="label">安全清洗</text>
+    <text x="25" y="116" class="body">过滤危险命令</text>
+    <text x="25" y="144" class="body">修正依赖与预算</text>
+    <text x="25" y="172" class="body muted">Policy + Sandbox guard</text>
+  </g>
+
+  <path class="arrow" d="M1118 257 H1203"/>
+
+  <g transform="translate(1215 160)">
+    <rect class="card" width="170" height="195" rx="28"/>
+    <rect x="24" y="24" width="74" height="30" rx="15" fill="#F4D06F"/>
+    <text x="38" y="45" class="small">DRAFT</text>
+    <text x="24" y="84" class="label">用户确认</text>
+    <text x="24" y="116" class="body">review</text>
+    <text x="24" y="144" class="body">revise</text>
+    <text x="24" y="172" class="body">confirm</text>
+  </g>
+
+  <g transform="translate(162 460)">
+    <rect x="0" y="0" width="1115" height="165" rx="32" fill="#0E1421" stroke="#2B3348" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="36" y="48" class="label">Confirmed LoopSpec</text>
+    <text x="36" y="82" class="body">执行阶段有依赖、有质量门、有命令白名单、有预算上限，结果写入 Trace / Context / Loop Report。</text>
+    <g transform="translate(35 108)">
+      <rect width="145" height="36" rx="18" fill="#1E2638" stroke="#47516A"/>
+      <text x="22" y="24" class="mono">context</text>
+    </g>
+    <path class="arrow" d="M205 126 H275"/>
+    <g transform="translate(292 108)">
+      <rect width="135" height="36" rx="18" fill="#1E2638" stroke="#47516A"/>
+      <text x="28" y="24" class="mono">design</text>
+    </g>
+    <path class="arrow" d="M450 126 H520"/>
+    <g transform="translate(538 108)">
+      <rect width="165" height="36" rx="18" fill="#1E2638" stroke="#47516A"/>
+      <text x="22" y="24" class="mono">implement</text>
+    </g>
+    <path class="arrow" d="M728 126 H798"/>
+    <g transform="translate(815 108)">
+      <rect width="150" height="36" rx="18" fill="#1E2638" stroke="#47516A"/>
+      <text x="26" y="24" class="mono">verify</text>
+    </g>
+    <path class="arrow" d="M990 126 H1045"/>
+    <g transform="translate(1060 108)">
+      <rect width="130" height="36" rx="18" fill="#1E2638" stroke="#47516A"/>
+      <text x="28" y="24" class="mono">report</text>
+    </g>
+  </g>
+
+  <g transform="translate(1280 462)">
+    <rect width="105" height="160" rx="24" fill="url(#gold)" opacity="0.95"/>
+    <text x="27" y="44" class="small">RUN</text>
+    <text x="22" y="82" class="small">TRACE</text>
+    <text x="22" y="116" class="small">EVAL</text>
+    <text x="20" y="148" class="small">DREAM</text>
+  </g>
+</svg>

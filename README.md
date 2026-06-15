@@ -98,6 +98,12 @@ F4                                     # 快速唤起配置入口
 /mcp tools filesystem                   # 查看 MCP tools
 /trace list                             # 查看最近运行
 /loop list                              # 查看可复用 Agent Loops
+/loop 做一个响应式 landing page，有 hero、pricing、FAQ
+                                       # 一句话生成 Loop 草案，不会直接执行
+/loop revise 增加移动端验收和暗色模式检查
+/loop confirm                          # strict validate + dry-run
+/loop execute                          # 仅 confirm 通过后执行
+/loop save landing-page-loop            # 保存为可复用 Loop
 /loop run dream-loop                    # 运行 Dream 证据闭环
 /dream --min-confidence 0.8             # 运行 Dreaming 质量门分析
 /evolve audit                           # 查看自进化覆盖
@@ -140,9 +146,15 @@ Evolva 的架构围绕三条主线展开：
 
 Evolva 把复杂 Agent 工作建模为 **Loop**，而不是散落的提示词或一次性脚本。Loop 是产品级运行单元：它描述触发方式、阶段、依赖、质量门和产物，运行后自动生成 Trace / Context / Loop Run Report，并可继续喂给 Dream 与 Eval 形成改进证据。
 
-```text
-Create Loop -> Run Phases -> Check Gates -> Record Trace -> Evaluate -> Dream -> Promote
-```
+<p align="center">
+  <img src="assets/loop-engineering-planner.svg" alt="Loop Engineering LLM-first planner" width="100%" />
+</p>
+
+Loop Engineering 的核心不是让 Agent 无限自治，而是把一句话需求先转成**可审阅、可验证、可回放**的工程闭环：LLM 负责理解和拆解需求，Evolva 负责安全清洗、用户确认、dry-run、质量门、执行预算和审计证据。
+
+<p align="center">
+  <img src="assets/loop-engineering-runtime.svg" alt="Loop Engineering production runtime" width="100%" />
+</p>
 
 内置 Loop：
 
@@ -158,9 +170,93 @@ TUI 内使用：
 ```text
 /loop list
 /loop show dream-loop
+/loop validate dream-loop
+/loop dry-run dream-loop
 /loop run dream-loop
 /loop run repo-improvement-loop
 ```
+
+也可以用自然语言直接生成一次性的工程闭环：
+
+```text
+/loop 帮我做一个网页，介绍 AI 简历生成器，包含上传入口、示例预览、价格卡片、FAQ，移动端适配
+```
+
+这不会立刻改代码。Evolva 会先生成一个可确认的 Loop Draft，包含：
+
+- 需求理解与 intent 类型；
+- 阶段拆解；
+- 检查点；
+- 命令候选和 shell allowlist；
+- 风险与开放问题；
+- 有界执行预算，例如 `max_repair_rounds`、`max_duration_seconds`、`max_tool_calls`。
+
+确认流程：
+
+```text
+/loop show-draft        # 查看当前草案和生成的 LoopSpec
+/loop revise <反馈>     # 修改阶段、检查点或验收要求
+/loop confirm           # 只做 strict validate / dry-run，不执行
+/loop execute           # confirm 通过后才执行
+/loop save <name>       # 保存为 evolva/loops/<id>.json
+/loop cancel            # 放弃当前草案
+```
+
+CLI 自动化也支持同样能力：
+
+```bash
+evolva loop plan "做一个响应式 landing page，有 hero、pricing、FAQ" --show-spec
+# `--show-spec` 也可以放在自然语言需求前：evolva loop plan --show-spec "做一个响应式 landing page"
+evolva loop revise "增加移动端验收"
+evolva loop confirm
+evolva loop save landing-page-loop
+evolva loop execute --json
+```
+
+CLI 中可使用 `evolva loop --yes run <loop> --resume` 从最近失败运行恢复。
+
+为了让 Loop 能直接承载真实工程流水线，Loop 运行现在默认具备几项落地能力：
+
+- **运行前校验 / Dry-run**：`/loop validate <loop>` 与 `evolva loop dry-run <loop>` 会在不执行 phase 的情况下检查依赖顺序、Gate 引用、必填命令、工具是否存在、命令 allowlist、timeout/retries 与 Policy 拦截结果。
+- **LLM-first Intent-to-Loop Planner**：`/loop <自然语言需求>` 会优先调用当前配置的 LLM，把需求拆成目标、阶段 DAG、检查点、命令候选、风险和执行预算；LLM 只生成草案，不会直接执行。草案会经过 sanitizer/validator（过滤危险命令、修正依赖、限制预算）后展示给用户确认；未配置模型或 LLM 输出不可解析时，才降级到 heuristic fallback，保证仍可离线开箱使用。
+- **有界执行**：生成的 LoopSpec 会携带 `execution_limits`，限制 phase 数、修复轮次、重试次数、总时长、工具调用、命令运行和文件修改规模，避免无限循环；运行器会在执行中硬性拦截超预算的 phase/gate，而不是只做静态校验。
+- **命令白名单**：所有 `shell` phase 和 `command_success` gate 必须通过 `command_allowlist`、phase/gate `allowlist` 或前缀通配规则显式放行，同时仍会经过 Evolva Policy 与 Sandbox。未声明 allowlist 的 Loop 会在运行前失败，而不是隐式执行本地命令。
+- **Trace 生命周期**：独立执行 `LoopRunner.run()` 会自动创建 Trace；嵌套在 Agent 对话中的 Loop 会复用当前 Trace，避免覆盖上层审计链路。Loop Report 会记录 `trace_run_id`。
+- **真实质量门**：`command_success` Gate 会通过 Evolva 的 `shell` 工具和确认/策略路径实际执行命令，并把命令、cwd、输出摘要写入 Gate 结果。
+- **工程执行控制**：Phase 支持 `timeout` 与 `retries`。对于 `shell` / `python_exec` 工具阶段，若 args 未显式设置 timeout，会自动下发 phase timeout；每次尝试都会写入运行报告。
+- **失败恢复**：CLI 支持 `evolva loop --yes run <loop> --resume`，会从同一 Loop 最近失败运行中复用 fingerprint 匹配的成功 phase 输出，避免长流程从头重跑；不匹配的 phase 会重新执行。
+
+Loop spec 示例：
+
+```json
+{
+  "id": "engineering-check-loop",
+  "command_allowlist": [
+    ".venv/bin/python -m pytest -q*"
+  ],
+  "phases": [
+    {
+      "id": "tests",
+      "type": "tool",
+      "tool": "shell",
+      "args": {"command": ".venv/bin/python -m pytest -q"},
+      "timeout": 180,
+      "retries": 1
+    }
+  ],
+  "gates": [
+    {
+      "after": "tests",
+      "type": "command_success",
+      "command": ".venv/bin/python -m pytest -q tests/test_loops.py",
+      "cwd": ".",
+      "timeout": 120
+    }
+  ]
+}
+```
+
+命令 allowlist 支持三种匹配：完整命令精确匹配、可执行文件名匹配（如 `python3`）、以及以 `*` 结尾的前缀匹配（如 `.venv/bin/python -m pytest -q*`）。建议生产环境优先使用完整命令或窄前缀，并把 destructive 命令继续交给 Policy/Sandbox 拦截。
 
 Loop 与 Workflow 的边界：Workflow 更像底层 DAG 执行格式；Loop 是面向真实工程习惯的闭环抽象，强调 gate、trace、eval、dream 和长期能力沉淀。
 
@@ -228,6 +324,7 @@ TUI 内常用路径：
 /trace context latest                 查看最新上下文/Prompt 事件
 /loop list                            查看内置与工作区 Agent Loops
 /loop show <loop>                     查看 Loop 阶段、Gate 和产物
+/loop validate <loop>                 运行前校验 Loop spec
 /loop run <loop>                      运行 Loop 并写入 Trace/Context/Loop Report
 /workflow path/to/workflow.json        运行 workflow spec
 /evolve audit                         查看自进化覆盖
@@ -271,6 +368,7 @@ TUI 内常用路径：
 /dream apply              应用高置信 Dreaming 建议
 /loop list                查看 Agent Loops
 /loop show <loop>         查看 Loop spec
+/loop validate <loop>     运行前校验 Loop spec
 /loop run <loop>          运行 Loop
 /workflow <json-spec-path> 运行 workflow spec
 /run <tool> <json>        直接调用工具

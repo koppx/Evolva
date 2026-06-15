@@ -18,7 +18,8 @@ from evolva.agent.dream import DreamEngine
 from evolva.agent.evolution_analyzer import EvalEvolutionAnalyzer, TraceEvolutionAnalyzer, apply_proposals, render_analysis, render_reports
 from evolva.agent.core import EvolvaAgent, TurnResult
 from evolva.config import AgentConfig, mask_secret, remove_runtime_config_keys, save_runtime_config
-from evolva.loops import LoopRunner, render_loop_result, render_loop_specs
+from evolva.loops import LoopDraftSession, LoopRunner, render_confirmed_draft, render_loop_draft, render_loop_result, render_loop_specs, render_loop_validation, validate_loop_spec
+from evolva.loops.planner import is_natural_language_loop
 from evolva.workflow.engine import WorkflowEngine
 
 
@@ -490,18 +491,58 @@ class EvolvaTUI:
             elif line.startswith("/loop"):
                 rest = line.removeprefix("/loop").strip()
                 runner = LoopRunner(self.agent)
+                session = LoopDraftSession.for_agent(self.agent)
                 if rest in {"", "list"}:
                     self._add_system(render_loop_specs(runner.list_specs()))
+                elif rest == "help":
+                    self._add_system("Usage: /loop <request> | /loop plan <request> | /loop revise <feedback> | /loop show-draft | /loop confirm | /loop execute | /loop save <name> | /loop cancel | /loop list/show/validate/dry-run/run")
+                elif is_natural_language_loop(rest) or rest.startswith("plan "):
+                    request = rest.removeprefix("plan ").strip() if rest.startswith("plan ") else rest
+                    self._add_system(render_loop_draft(session.plan(request, agent=self.agent)))
+                elif rest == "show-draft":
+                    self._add_system(render_loop_draft(session.require_draft(), show_spec=True))
+                elif rest.startswith("revise "):
+                    self._add_system(render_loop_draft(session.revise(rest.removeprefix("revise ").strip())))
+                elif rest == "confirm":
+                    self._add_system(render_confirmed_draft(session.confirm(agent=self.agent)))
+                elif rest == "execute":
+                    draft = session.require_draft()
+                    if draft.status != "ready_to_run":
+                        self._add_system("Active Loop draft is not ready. Run `/loop confirm` first and resolve validation/open-question issues.")
+                    else:
+                        session.mark_running()
+                        self.busy = True
+                        self.status = "Running generated loop..."
+                        thread = threading.Thread(target=self._worker_loop_spec, args=(draft.loop_spec,), daemon=True)
+                        thread.start()
+                elif rest.startswith("save"):
+                    path = session.save_loop(rest.removeprefix("save").strip())
+                    self._add_system(f"Saved Loop spec: {path}")
+                elif rest == "cancel":
+                    session.clear()
+                    self._add_system("Cancelled active Loop draft.")
                 elif rest.startswith("show "):
                     spec = runner.load(rest.removeprefix("show ").strip())
                     self._add_system(json.dumps(spec.to_dict(), ensure_ascii=False, indent=2))
+                elif rest.startswith("validate "):
+                    spec = runner.load(rest.removeprefix("validate ").strip())
+                    self._add_system(render_loop_validation(spec, agent=self.agent, strict_policy=True))
+                elif rest.startswith("dry-run "):
+                    spec = runner.load(rest.removeprefix("dry-run ").strip())
+                    validation = validate_loop_spec(spec, agent=self.agent, strict_policy=True)
+                    lines = [f"Loop dry-run: {spec.id}", f"- Status: {'ok' if validation.ok else 'failed'}"]
+                    lines.extend(f"- Warning: {warning}" for warning in validation.warnings)
+                    lines.extend(f"- Error: {error}" for error in validation.errors)
+                    if validation.ok:
+                        lines.append("- Execution: not run")
+                    self._add_system("\n".join(lines))
                 elif rest.startswith("run "):
                     self.busy = True
                     self.status = "Running loop..."
                     thread = threading.Thread(target=self._worker_loop, args=(rest.removeprefix("run ").strip(),), daemon=True)
                     thread.start()
                 else:
-                    self._add_system("Usage: /loop list | /loop show <loop_id|path> | /loop run <loop_id|path>")
+                    self._add_system("Usage: /loop <request> | /loop plan <request> | /loop revise <feedback> | /loop show-draft | /loop confirm | /loop execute | /loop save <name> | /loop cancel | /loop list/show/validate/dry-run/run")
             elif line.startswith("/workflow"):
                 rest = line.removeprefix("/workflow").strip()
                 if not rest:
@@ -715,6 +756,18 @@ class EvolvaTUI:
     def _worker_loop(self, loop_id: str) -> None:
         try:
             result = LoopRunner(self.agent).run(loop_id)
+            self.queue.put(("loop_result", result))
+        except Exception as exc:
+            self.queue.put(("error", f"Loop error: {exc}"))
+
+    def _worker_loop_spec(self, spec: Any) -> None:
+        try:
+            result = LoopRunner(self.agent).run(spec)
+            if result.ok:
+                try:
+                    LoopDraftSession.for_agent(self.agent).mark_completed()
+                except Exception:
+                    pass
             self.queue.put(("loop_result", result))
         except Exception as exc:
             self.queue.put(("error", f"Loop error: {exc}"))

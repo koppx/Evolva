@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Evolva Loop Engineering Landing Summary</title>
+  <style>
+    :root { color-scheme: light dark; --accent: #5b6cff; --ok: #16833a; --warn: #9a6700; --bg: #f7f8fb; --card: #ffffff; --text: #1f2430; --muted: #5d6575; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #11131a; --card: #191d27; --text: #eef1f8; --muted: #a8afbf; } }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    main { max-width: 980px; margin: 0 auto; padding: 40px 20px; }
+    .hero { background: linear-gradient(135deg, rgba(91,108,255,.18), rgba(22,131,58,.12)); border: 1px solid rgba(91,108,255,.25); border-radius: 22px; padding: 28px; }
+    h1 { margin: 0 0 8px; font-size: 32px; }
+    h2 { margin-top: 30px; }
+    p, li { line-height: 1.62; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; background: rgba(22,131,58,.14); color: var(--ok); font-weight: 700; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 18px; }
+    .card, details { background: var(--card); border: 1px solid rgba(130,140,170,.25); border-radius: 16px; padding: 18px; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    pre { overflow: auto; background: rgba(120,130,160,.12); padding: 14px; border-radius: 12px; }
+    table { border-collapse: collapse; width: 100%; background: var(--card); border-radius: 14px; overflow: hidden; }
+    th, td { border: 1px solid rgba(130,140,170,.25); padding: 10px 12px; text-align: left; vertical-align: top; }
+    th { background: rgba(91,108,255,.12); }
+    summary { cursor: pointer; font-weight: 700; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <span class="badge">PASS_WITH_NOTES</span>
+    <h1>Evolva Loop Engineering 落地增强</h1>
+    <p>本次修改把 Loop 从“可演示的编排概念”推进到“可用于本地生产工程的闭环单元”：可预检、可追踪、可执行真实质量门、可重试、可恢复、可审计，并默认拒绝未显式授权的 shell 命令。</p>
+  </section>
+
+  <section class="grid">
+    <div class="card"><strong>Trace</strong><br>独立 Loop 自动创建 trace，嵌套 Loop 复用父 trace。</div>
+    <div class="card"><strong>Gates</strong><br><code>command_success</code> 通过 Evolva shell 工具实际执行。</div>
+    <div class="card"><strong>Controls</strong><br>Phase 支持 <code>timeout</code> 与 <code>retries</code>，报告记录每次 attempt。</div>
+    <div class="card"><strong>Validation</strong><br>新增 CLI/TUI <code>/loop validate</code>、<code>dry-run</code> 与工具/Policy 预检。</div>
+    <div class="card"><strong>Safety</strong><br>Shell phase 与 command gate 必须显式 <code>command_allowlist</code>。</div>
+    <div class="card"><strong>Resume</strong><br><code>run --resume</code> 只复用 phase fingerprint 匹配的成功输出。</div>
+  </section>
+
+  <h2>Changed Files</h2>
+  <ul>
+    <li><code>evolva/loops/spec.py</code> - Loop schema/result metadata, command allowlist, and fingerprint hardening.</li>
+    <li><code>evolva/loops/runner.py</code> - trace lifecycle, strict validation, allowlisted command gates, retries, dry-run helpers, and resume.</li>
+    <li><code>evolva/agent/core.py</code> - nested trace-safe chat lifecycle.</li>
+    <li><code>evolva/cli.py</code>, <code>evolva/tui.py</code>, <code>evolva/loops/__init__.py</code> - command wiring/export.</li>
+    <li><code>tests/test_loops.py</code> - regression coverage for new loop behavior.</li>
+    <li><code>README.md</code> - practical Loop Engineering docs and example.</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <table>
+    <thead><tr><th>Check</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td><code>.venv/bin/python -m pytest -q tests/test_loops.py tests/test_core.py</code></td><td>30 passed in 1.54s</td></tr>
+      <tr><td><code>.venv/bin/python -m pytest -q</code></td><td>104 passed, 1 skipped in 2.72s</td></tr>
+      <tr><td><code>.venv/bin/python -m evolva.cli loop --yes validate dream-loop</code></td><td>Status: ok</td></tr>
+      <tr><td><code>.venv/bin/python -m evolva.cli loop --yes dry-run eval-regression-loop</code></td><td>Status: ok, execution not run</td></tr>
+      <tr><td><code>eval-regression-loop --json</code></td><td>completed=True, trace_run_id=run_20260615_151514_70e3db7f</td></tr>
+    </tbody>
+  </table>
+
+  <details>
+    <summary>Loop spec example</summary>
+    <pre>{
+  "id": "engineering-check-loop",
+  "command_allowlist": [".venv/bin/python -m pytest -q*"],
+  "phases": [
+    {
+      "id": "tests",
+      "type": "tool",
+      "tool": "shell",
+      "args": {"command": ".venv/bin/python -m pytest -q"},
+      "timeout": 180,
+      "retries": 1
+    }
+  ],
+  "gates": [
+    {
+      "after": "tests",
+      "type": "command_success",
+      "command": ".venv/bin/python -m pytest -q tests/test_loops.py",
+      "cwd": ".",
+      "timeout": 120
+    }
+  ]
+}</pre>
+  </details>
+
+  <details>
+    <summary>Residual risks and follow-ups</summary>
+    <ul>
+      <li>当前适合可信本地生产工程流；多租户或不可信代码执行仍应增加容器/OS 级隔离。</li>
+      <li>命令 allowlist 是精确/可执行名/前缀匹配，生产环境建议使用窄前缀或完整命令。</li>
+      <li>Retry policy is fixed-count; future versions can add backoff and retry-on predicates.</li>
+      <li>Future versions can add JSON Schema, richer artifact provenance, and containerized execution backends.</li>
+    </ul>
+  </details>
+
+  <p class="muted">Run artifacts: <code>docs/dev-loop-runs/2026-06-15-loop-engineering-landing/</code></p>
+</main>
+</body>
+</html>

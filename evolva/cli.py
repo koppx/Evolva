@@ -11,7 +11,8 @@ from evolva.agent.dream import DreamEngine
 from evolva.agent.evolution_analyzer import EvalEvolutionAnalyzer, TraceEvolutionAnalyzer, apply_proposals, render_analysis, render_reports
 from evolva.config import AgentConfig
 from evolva.eval.harness import EvalHarness, render_gate, render_results
-from evolva.loops import LoopRunner, render_loop_result, render_loop_specs
+from evolva.loops import LoopDraftSession, LoopRunner, render_confirmed_draft, render_loop_draft, render_loop_result, render_loop_specs, render_loop_validation, validate_loop_spec
+from evolva.loops.planner import is_natural_language_loop
 from evolva.maintenance.optimizer import run_daily_optimization
 from evolva.tui import run_fullscreen_tui, run_tui
 from evolva.workflow.engine import WorkflowEngine
@@ -60,7 +61,16 @@ Commands:
                        Raise the Dreaming drift-guard threshold
   /loop list           List repeatable agent loops
   /loop show <loop>    Show a loop spec
+  /loop validate <loop>
+                       Validate a loop spec before running it
+  /loop dry-run <loop> Validate loop spec, tool availability, and policy
   /loop run <loop>     Run a loop and record trace evidence
+  /loop <request>      Plan a new Loop from natural language; does not execute
+  /loop revise <text>  Revise the active draft
+  /loop confirm        Validate/dry-run active draft
+  /loop execute        Execute only after confirm succeeds
+  /loop save <name>    Save active draft as reusable Loop
+  /loop cancel         Clear active draft
   /workflow <json>     Run a workflow spec file
   /run <tool> <json>   Call a tool directly
   /exit                Quit
@@ -252,17 +262,67 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
     if line.startswith("/loop"):
         rest = line.removeprefix("/loop").strip()
         runner = LoopRunner(agent)
+        session = LoopDraftSession.for_agent(agent)
         if rest in {"", "list"}:
             print(render_loop_specs(runner.list_specs()))
+            return True
+        if rest == "help":
+            print("Usage: /loop <request> | /loop plan <request> | /loop revise <feedback> | /loop show-draft | /loop confirm | /loop execute | /loop save <name> | /loop cancel | /loop list/show/validate/dry-run/run")
+            return True
+        if is_natural_language_loop(rest) or rest.startswith("plan "):
+            request = rest.removeprefix("plan ").strip() if rest.startswith("plan ") else rest
+            print(render_loop_draft(session.plan(request, agent=agent)))
+            return True
+        if rest == "show-draft":
+            print(render_loop_draft(session.require_draft(), show_spec=True))
+            return True
+        if rest.startswith("revise "):
+            print(render_loop_draft(session.revise(rest.removeprefix("revise ").strip())))
+            return True
+        if rest == "confirm":
+            print(render_confirmed_draft(session.confirm(agent=agent)))
+            return True
+        if rest == "execute":
+            draft = session.require_draft()
+            if draft.status != "ready_to_run":
+                print("Active Loop draft is not ready. Run `/loop confirm` first and resolve validation/open-question issues.")
+                return True
+            session.mark_running()
+            result = runner.run(draft.loop_spec)
+            if result.ok:
+                session.mark_completed()
+            print(render_loop_result(result))
+            return True
+        if rest.startswith("save"):
+            path = session.save_loop(rest.removeprefix("save").strip())
+            print(f"Saved Loop spec: {path}")
+            return True
+        if rest == "cancel":
+            session.clear()
+            print("Cancelled active Loop draft.")
             return True
         if rest.startswith("show "):
             spec = runner.load(rest.removeprefix("show ").strip())
             print(json.dumps(spec.to_dict(), ensure_ascii=False, indent=2))
             return True
+        if rest.startswith("validate "):
+            spec = runner.load(rest.removeprefix("validate ").strip())
+            print(render_loop_validation(spec, agent=agent, strict_policy=True))
+            return True
+        if rest.startswith("dry-run "):
+            spec = runner.load(rest.removeprefix("dry-run ").strip())
+            validation = validate_loop_spec(spec, agent=agent, strict_policy=True)
+            lines = [f"Loop dry-run: {spec.id}", f"- Status: {'ok' if validation.ok else 'failed'}"]
+            lines.extend(f"- Warning: {warning}" for warning in validation.warnings)
+            lines.extend(f"- Error: {error}" for error in validation.errors)
+            if validation.ok:
+                lines.append("- Execution: not run")
+            print("\n".join(lines))
+            return True
         if rest.startswith("run "):
             print(render_loop_result(runner.run(rest.removeprefix("run ").strip())))
             return True
-        print("Usage: /loop list | /loop show <loop_id|path> | /loop run <loop_id|path>")
+        print("Usage: /loop <request> | /loop plan <request> | /loop revise <feedback> | /loop show-draft | /loop confirm | /loop execute | /loop save <name> | /loop cancel | /loop list/show/validate/dry-run/run")
         return True
     if line.startswith("/workflow"):
         path = line.removeprefix("/workflow").strip()
@@ -472,21 +532,94 @@ def dream_cmd(args: argparse.Namespace) -> int:
 def loop_cmd(args: argparse.Namespace) -> int:
     agent = EvolvaAgent(AgentConfig(), assume_yes=args.yes)
     runner = LoopRunner(agent)
+    session = LoopDraftSession.for_agent(agent)
     if args.loop_cmd == "list":
         print(render_loop_specs(runner.list_specs()))
+        return 0
+    if args.loop_cmd == "plan":
+        draft = session.plan(_loop_text(args, "request"), agent=agent)
+        print(render_loop_draft(draft, show_spec=args.show_spec))
+        return 0
+    if args.loop_cmd == "show-draft":
+        print(render_loop_draft(session.require_draft(), show_spec=args.show_spec))
+        return 0
+    if args.loop_cmd == "revise":
+        draft = session.revise(_loop_text(args, "feedback"))
+        print(render_loop_draft(draft, show_spec=args.show_spec))
+        return 0
+    if args.loop_cmd == "confirm":
+        draft = session.confirm(agent=agent)
+        print(render_confirmed_draft(draft))
+        return 0 if draft.status == "ready_to_run" else 1
+    if args.loop_cmd == "execute":
+        draft = session.require_draft()
+        if draft.status != "ready_to_run":
+            print("Active Loop draft is not ready. Run `evolva loop confirm` first and resolve validation/open-question issues.")
+            return 1
+        session.mark_running()
+        result = runner.run(draft.loop_spec)
+        if result.ok:
+            session.mark_completed()
+        if args.json:
+            print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(render_loop_result(result))
+        return 0 if result.ok else 1
+    if args.loop_cmd == "save":
+        path = session.save_loop(args.name or "")
+        print(f"Saved Loop spec: {path}")
+        return 0
+    if args.loop_cmd == "cancel":
+        session.clear()
+        print("Cancelled active Loop draft.")
         return 0
     if args.loop_cmd == "show":
         spec = runner.load(args.loop_id)
         print(json.dumps(spec.to_dict(), ensure_ascii=False, indent=2))
         return 0
+    if args.loop_cmd == "validate":
+        try:
+            spec = runner.load(args.loop_id)
+            print(render_loop_validation(spec, agent=agent, strict_policy=True))
+            return 0
+        except Exception as exc:
+            print(f"Loop validation: {args.loop_id}\n- Status: failed\n- Error: {exc}")
+            return 1
+    if args.loop_cmd == "dry-run":
+        spec = runner.load(args.loop_id)
+        validation = validate_loop_spec(spec, agent=agent, strict_policy=True)
+        print(f"Loop dry-run: {spec.id}")
+        print(f"- Status: {'ok' if validation.ok else 'failed'}")
+        for warning in validation.warnings:
+            print(f"- Warning: {warning}")
+        for error in validation.errors:
+            print(f"- Error: {error}")
+        if validation.ok:
+            print("- Execution: not run")
+        return 0 if validation.ok else 1
     if args.loop_cmd == "run":
-        result = runner.run(args.loop_id)
+        result = runner.run(args.loop_id, resume=args.resume)
         if args.json:
             print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
         else:
             print(render_loop_result(result))
         return 0 if result.ok else 1
     raise SystemExit("unknown loop command")
+
+
+def _loop_text(args: argparse.Namespace, field: str) -> str:
+    """Return natural-language text from argparse positional fragments.
+
+    `loop plan` and `loop revise` intentionally accept free-form text.  Use
+    `nargs="+"` (not REMAINDER) in the parser so options such as
+    `--show-spec` work both before and after the request, then join the text
+    fragments here for the planner/session API.
+    """
+
+    value = getattr(args, field, "")
+    if isinstance(value, list):
+        return " ".join(value).strip()
+    return str(value or "").strip()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -584,12 +717,40 @@ def build_parser() -> argparse.ArgumentParser:
     loop_sub = loop_p.add_subparsers(dest="loop_cmd", required=True)
     loop_list = loop_sub.add_parser("list", help="List built-in and workspace loops")
     loop_list.set_defaults(func=loop_cmd)
+    loop_plan = loop_sub.add_parser("plan", help="Create a Loop draft from a natural language request; does not execute")
+    loop_plan.add_argument("--show-spec", action="store_true", help="Include generated LoopSpec JSON")
+    loop_plan.add_argument("request", nargs="+")
+    loop_plan.set_defaults(func=loop_cmd)
+    loop_draft = loop_sub.add_parser("show-draft", help="Show the active generated Loop draft")
+    loop_draft.add_argument("--show-spec", action="store_true", help="Include generated LoopSpec JSON")
+    loop_draft.set_defaults(func=loop_cmd)
+    loop_revise = loop_sub.add_parser("revise", help="Revise the active generated Loop draft")
+    loop_revise.add_argument("--show-spec", action="store_true", help="Include generated LoopSpec JSON")
+    loop_revise.add_argument("feedback", nargs="+")
+    loop_revise.set_defaults(func=loop_cmd)
+    loop_confirm = loop_sub.add_parser("confirm", help="Validate/dry-run the active generated Loop draft")
+    loop_confirm.set_defaults(func=loop_cmd)
+    loop_execute = loop_sub.add_parser("execute", help="Execute the active generated Loop after confirm")
+    loop_execute.add_argument("--json", action="store_true", help="Print run result JSON")
+    loop_execute.set_defaults(func=loop_cmd)
+    loop_save = loop_sub.add_parser("save", help="Save active generated Loop draft as reusable JSON")
+    loop_save.add_argument("name", nargs="?", default="")
+    loop_save.set_defaults(func=loop_cmd)
+    loop_cancel = loop_sub.add_parser("cancel", help="Cancel and clear active generated Loop draft")
+    loop_cancel.set_defaults(func=loop_cmd)
     loop_show = loop_sub.add_parser("show", help="Show one loop spec as JSON")
     loop_show.add_argument("loop_id")
     loop_show.set_defaults(func=loop_cmd)
+    loop_validate = loop_sub.add_parser("validate", help="Validate a loop by ID or JSON path")
+    loop_validate.add_argument("loop_id")
+    loop_validate.set_defaults(func=loop_cmd)
+    loop_dry_run = loop_sub.add_parser("dry-run", help="Validate a loop, tool availability, command allowlist, and policy without executing phases")
+    loop_dry_run.add_argument("loop_id")
+    loop_dry_run.set_defaults(func=loop_cmd)
     loop_run = loop_sub.add_parser("run", help="Run a loop by ID or JSON path")
     loop_run.add_argument("loop_id")
     loop_run.add_argument("--json", action="store_true", help="Print run result JSON")
+    loop_run.add_argument("--resume", action="store_true", help="Reuse successful outputs from the latest failed run of the same loop")
     loop_run.set_defaults(func=loop_cmd)
 
     workflow_p = sub.add_parser("workflow", help="Automation: run a JSON workflow spec")
