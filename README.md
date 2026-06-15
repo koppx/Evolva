@@ -147,14 +147,10 @@ Evolva 的架构围绕三条主线展开：
 Evolva 把复杂 Agent 工作建模为 **Loop**，而不是散落的提示词或一次性脚本。Loop 是产品级运行单元：它描述触发方式、阶段、依赖、质量门和产物，运行后自动生成 Trace / Context / Loop Run Report，并可继续喂给 Dream 与 Eval 形成改进证据。
 
 <p align="center">
-  <img src="assets/loop-engineering-planner.svg" alt="Loop Engineering LLM-first planner" width="100%" />
+  <img src="assets/loop-engineering.jpeg" alt="Loop Engineering end-to-end engineering loop" width="100%" />
 </p>
 
 Loop Engineering 的核心不是让 Agent 无限自治，而是把一句话需求先转成**可审阅、可验证、可回放**的工程闭环：LLM 负责理解和拆解需求，Evolva 负责安全清洗、用户确认、dry-run、质量门、执行预算和审计证据。
-
-<p align="center">
-  <img src="assets/loop-engineering-runtime.svg" alt="Loop Engineering production runtime" width="100%" />
-</p>
 
 内置 Loop：
 
