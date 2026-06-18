@@ -80,6 +80,7 @@ class ScorerContext:
     tool_logs: list[str]
     duration_ms: int | None = None
     agent: Any = None
+    trace_run_id: str = ""
 
     @property
     def text(self) -> str:
@@ -142,13 +143,16 @@ class ScorerRegistry:
             ("forbidden_contains", "not_contains"),
             ("expected_regex", "regex"),
             ("expected_artifacts", "artifact_exists"),
+            ("expected_file_globs", "file_glob"),
             ("expected_artifact_contains", "artifact_contains"),
             ("expected_json", "json_match"),
             ("expected_memory", "memory_contains"),
             ("expected_context", "context_contains"),
             ("expected_trace_events", "trace_event"),
+            ("forbidden_trace_contains", "trace_not_contains"),
             ("expected_trace_schema", "trace_schema"),
             ("expected_artifact_manifest", "artifact_manifest"),
+            ("expected_metrics", "metric"),
             ("expected_tool_sequence", "tool_sequence"),
             ("max_duration_ms", "latency"),
             ("command_checks", "command"),
@@ -165,6 +169,7 @@ def build_default_registry() -> ScorerRegistry:
     registry.register("not_contains", not_contains_scorer)
     registry.register("regex", regex_scorer)
     registry.register("artifact_exists", artifact_exists_scorer)
+    registry.register("file_glob", file_glob_scorer)
     registry.register("artifact_contains", artifact_contains_scorer)
     registry.register("json_match", json_match_scorer)
     registry.register("memory_contains", memory_contains_scorer)
@@ -172,8 +177,10 @@ def build_default_registry() -> ScorerRegistry:
     registry.register("latency", latency_scorer)
     registry.register("no_tool_error", no_tool_error_scorer)
     registry.register("trace_event", trace_event_scorer)
+    registry.register("trace_not_contains", trace_not_contains_scorer)
     registry.register("trace_schema", trace_schema_scorer)
     registry.register("artifact_manifest", artifact_manifest_scorer)
+    registry.register("metric", metric_scorer)
     registry.register("tool_sequence", tool_sequence_scorer)
     registry.register("command", command_scorer)
     return registry
@@ -240,6 +247,37 @@ def artifact_exists_scorer(task: dict[str, Any], context: ScorerContext) -> Iter
             actual=str(path) if path else None,
             evidence="artifact exists" if exists else "artifact missing or unsafe",
         )
+
+
+def file_glob_scorer(task: dict[str, Any], context: ScorerContext) -> Iterable[ScoreCheck]:
+    checks: list[ScoreCheck] = []
+    for pattern in task.get("expected_file_globs", []):
+        pattern_s = str(pattern)
+        path = Path(pattern_s)
+        if path.is_absolute() or ".." in path.parts:
+            checks.append(
+                ScoreCheck(
+                    name=f"file_glob_safe:{pattern_s}",
+                    passed=False,
+                    dimension="artifact",
+                    expected="relative safe glob",
+                    actual=pattern_s,
+                    evidence="glob is absolute or escapes root",
+                )
+            )
+            continue
+        matches = sorted(str(match.relative_to(context.root)) for match in context.root.glob(pattern_s))
+        checks.append(
+            ScoreCheck(
+                name=f"file_glob:{pattern_s}",
+                passed=bool(matches),
+                dimension="artifact",
+                expected=pattern_s,
+                actual=matches,
+                evidence="glob matched files" if matches else "glob matched no files",
+            )
+        )
+    return checks
 
 
 def artifact_contains_scorer(task: dict[str, Any], context: ScorerContext) -> Iterable[ScoreCheck]:
@@ -359,13 +397,8 @@ def trace_event_scorer(task: dict[str, Any], context: ScorerContext) -> Iterable
     if not expected or context.agent is None:
         return []
     try:
-        if getattr(context.agent.tracer, "current", None) is not None:
-            run_id = context.agent.tracer.current.run_id
-            events = [event.to_dict() if hasattr(event, "to_dict") else {"kind": event.kind, "data": event.data} for event in context.agent.tracer.current.events]
-        else:
-            run_id = context.agent.tracer.list_runs(limit=1)[0]["run_id"]
-            trace = context.agent.tracer.load(run_id)
-            events = trace.get("events", [])
+        run_id, trace = _load_trace_payload(context)
+        events = trace.get("events", [])
     except Exception as exc:
         return [ScoreCheck("trace:load_latest", False, "trace", evidence=str(exc))]
     kinds = [str(event.get("kind", "")) for event in events]
@@ -394,14 +427,7 @@ def trace_schema_scorer(task: dict[str, Any], context: ScorerContext) -> Iterabl
     if context.agent is None:
         return [ScoreCheck("trace_schema:agent", False, "trace", evidence="agent unavailable")]
     try:
-        if getattr(context.agent.tracer, "current", None) is not None:
-            trace = {
-                "schema_version": context.agent.tracer.current.schema_version,
-                "events": [event.to_dict() if hasattr(event, "to_dict") else {"kind": event.kind, "data": event.data} for event in context.agent.tracer.current.events],
-            }
-        else:
-            run_id = context.agent.tracer.list_runs(limit=1)[0]["run_id"]
-            trace = context.agent.tracer.load(run_id)
+        _, trace = _load_trace_payload(context)
     except Exception as exc:
         return [ScoreCheck("trace_schema:load_latest", False, "trace", evidence=str(exc))]
     events = trace.get("events", []) or []
@@ -413,6 +439,32 @@ def trace_schema_scorer(task: dict[str, Any], context: ScorerContext) -> Iterabl
         ScoreCheck("trace_schema:event_ids", event_ids_ok, "trace", expected="event_id on every event", actual=len(events), evidence="events are addressable" if event_ids_ok else "missing event_id"),
         ScoreCheck("trace_schema:span_edges", span_ids_ok, "trace", expected="span_id and parent_id on every event", actual=len(events), evidence="events include timeline edges" if span_ids_ok else "missing span edges"),
     ]
+
+
+def trace_not_contains_scorer(task: dict[str, Any], context: ScorerContext) -> Iterable[ScoreCheck]:
+    forbidden = [str(item) for item in task.get("forbidden_trace_contains", [])]
+    if not forbidden:
+        return []
+    if context.agent is None:
+        return [ScoreCheck("trace_not_contains:agent", False, "trace", evidence="agent unavailable")]
+    try:
+        _, payload = _load_trace_payload(context)
+    except Exception as exc:
+        return [ScoreCheck("trace_not_contains:load_latest", False, "trace", evidence=str(exc))]
+    rendered = json.dumps(payload, ensure_ascii=False)
+    checks: list[ScoreCheck] = []
+    for needle in forbidden:
+        passed = needle not in rendered
+        checks.append(
+            ScoreCheck(
+                name=f"trace_not_contains:{needle}",
+                passed=passed,
+                dimension="trace",
+                expected=f"not {needle}",
+                evidence="forbidden trace text absent" if passed else "forbidden trace text present",
+            )
+        )
+    return checks
 
 
 def artifact_manifest_scorer(task: dict[str, Any], context: ScorerContext) -> Iterable[ScoreCheck]:
@@ -467,6 +519,40 @@ def artifact_manifest_scorer(task: dict[str, Any], context: ScorerContext) -> It
                     evidence="sha256 matched" if latest.sha256 == str(sha256) else "sha256 mismatch",
                 )
             )
+    return checks
+
+
+def metric_scorer(task: dict[str, Any], context: ScorerContext) -> Iterable[ScoreCheck]:
+    specs = task.get("expected_metrics", [])
+    if not specs:
+        return []
+    if context.agent is None or not hasattr(context.agent, "observability"):
+        return [ScoreCheck("metric:agent", False, "observability", evidence="observability sink unavailable")]
+    records = context.agent.observability.recent_metrics()
+    checks: list[ScoreCheck] = []
+    for spec in specs:
+        if isinstance(spec, str):
+            spec = {"name": spec}
+        if not isinstance(spec, dict):
+            checks.append(ScoreCheck("metric:config", False, "observability", evidence="metric spec must be string or object"))
+            continue
+        metric_name = str(spec.get("name", ""))
+        tags = {str(key): str(value) for key, value in dict(spec.get("tags", {})).items()}
+        matched = [
+            record
+            for record in records
+            if record.name == metric_name and all(str(record.tags.get(key, "")) == value for key, value in tags.items())
+        ]
+        checks.append(
+            ScoreCheck(
+                name=f"metric:{metric_name}",
+                passed=bool(matched),
+                dimension="observability",
+                expected=spec,
+                actual=[record.to_dict() for record in matched[-3:]],
+                evidence="metric record matched" if matched else "metric record missing",
+            )
+        )
     return checks
 
 
@@ -535,6 +621,21 @@ def _looks_unsafe_arg(arg: str) -> bool:
     dangerous = {";", "&&", "||", "|", ">", "<", "`", "$"}
     destructive = {"rm", "shutdown", "mkfs", "reboot"}
     return arg in dangerous or arg in destructive or ".." in arg
+
+
+def _load_trace_payload(context: ScorerContext) -> tuple[str, dict[str, Any]]:
+    if context.trace_run_id:
+        return context.trace_run_id, context.agent.tracer.load(context.trace_run_id)
+    current = getattr(context.agent.tracer, "current", None)
+    if current is not None:
+        return current.run_id, {
+            "schema_version": current.schema_version,
+            "user_input": current.user_input,
+            "final_answer": current.final_answer,
+            "events": [event.to_dict() if hasattr(event, "to_dict") else {"kind": event.kind, "data": event.data} for event in current.events],
+        }
+    run_id = context.agent.tracer.list_runs(limit=1)[0]["run_id"]
+    return run_id, context.agent.tracer.load(run_id)
 
 
 def _dedupe(items: Iterable[str]) -> list[str]:

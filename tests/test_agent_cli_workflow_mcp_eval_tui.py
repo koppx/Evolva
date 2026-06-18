@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
 from argparse import Namespace
@@ -10,9 +11,8 @@ import pytest
 
 from evolva.agent.core import EvolvaAgent, SYSTEM_PROMPT
 from evolva.agent.mcp import MCPClient, MCPManager, MCPServerConfig, render_mcp_result
-from evolva.agent.multi_agent import MultiAgentCoordinator
 from evolva.agent.tracing import TraceRecorder
-from evolva.cli import build_parser, dream_cmd, evolve_cmd, handle_command, loop_cmd, main, mcp_cmd, once, optimize_cmd
+from evolva.cli import build_parser, dream_cmd, evolve_cmd, handle_command, loop_cmd, main, mcp_cmd, metrics_cmd, once, optimize_cmd, sandbox_cmd
 from evolva.eval.harness import EvalHarness, EvalResult, render_gate, render_results
 from evolva.eval.scorers import ScoreCheck, ScorerRegistry
 import evolva.tui as tui_module
@@ -203,15 +203,20 @@ def test_eval_harness_score_summary_report_and_run_file(temp_config, tmp_path):
     out = temp_config.workspace / "out.txt"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("artifact ok", encoding="utf-8")
+    corrupt = temp_config.workspace / "state.json.corrupt.1"
+    corrupt.write_text("{bad json", encoding="utf-8")
+    harness.agent.observability.record("mcp.timeout", tags={"tool": "mcp_tools"})
     report = harness.score_report(
         {
             "expected_contains": ["ok"],
             "forbidden_contains": ["bad"],
             "expected_regex": ["^ok$"],
             "expected_artifacts": ["evolva/workspace/out.txt", "../escape.txt"],
+            "expected_file_globs": ["evolva/workspace/state.json.corrupt.*"],
             "expected_artifact_contains": [{"path": "evolva/workspace/out.txt", "contains": ["artifact"]}],
             "expected_memory": ["memory state"],
             "expected_context": ["context state"],
+            "expected_metrics": [{"name": "mcp.timeout", "tags": {"tool": "mcp_tools"}}],
             "max_duration_ms": 500,
             "scorers": ["no_tool_error"],
         },
@@ -224,10 +229,12 @@ def test_eval_harness_score_summary_report_and_run_file(temp_config, tmp_path):
     assert checks["not_contains:bad"]
     assert checks["regex:^ok$"]
     assert checks["artifact_exists:evolva/workspace/out.txt"]
+    assert checks["file_glob:evolva/workspace/state.json.corrupt.*"]
     assert checks["artifact_contains:evolva/workspace/out.txt:artifact"]
     assert not checks["artifact_inside_root:../escape.txt"]
     assert checks["memory:memory state"]
     assert checks["context:context state"]
+    assert checks["metric:mcp.timeout"]
     assert checks["duration<=500ms"]
     assert checks["no_tool_error"]
     assert report.dimensions()["artifact"] < 1.0
@@ -310,6 +317,34 @@ def test_mcp_client_framing_with_fake_process(tmp_path):
     assert b'"result": "ok"' in written[0]
 
 
+def test_mcp_client_request_timeout(tmp_path):
+    script = tmp_path / "sleep_server.py"
+    script.write_text("import time\nwhile True:\n    time.sleep(1)\n", encoding="utf-8")
+    client = MCPClient(MCPServerConfig("slow", sys.executable, [str(script)], request_timeout=1), root=tmp_path)
+    try:
+        with pytest.raises(RuntimeError, match="timed out"):
+            client.request("tools/list", {})
+    finally:
+        client.close()
+
+
+def test_mcp_client_rejects_oversized_message(tmp_path):
+    script = tmp_path / "huge_server.py"
+    script.write_text(
+        "import sys, time\n"
+        "sys.stdout.buffer.write(b'Content-Length: 999\\r\\n\\r\\n')\n"
+        "sys.stdout.buffer.flush()\n"
+        "time.sleep(2)\n",
+        encoding="utf-8",
+    )
+    client = MCPClient(MCPServerConfig("huge", sys.executable, [str(script)], request_timeout=2, max_message_bytes=10), root=tmp_path)
+    try:
+        with pytest.raises(RuntimeError, match="message too large"):
+            client.request("tools/list", {})
+    finally:
+        client.close()
+
+
 def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_config):
     parser = build_parser()
     assert parser.prog == "evolva"
@@ -323,6 +358,8 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     chat_args = parser.parse_args(["--chat", "--yes"])
     assert chat_args.cmd is None and chat_args.chat and chat_args.yes
     assert parser.parse_args(["mcp", "call", "s", "t", "{}", "--yes"]).mcp_cmd == "call"
+    assert parser.parse_args(["metrics", "prometheus"]).metrics_cmd == "prometheus"
+    assert parser.parse_args(["sandbox", "smoke", "--timeout", "3"]).sandbox_cmd == "smoke"
     parsed_eval = parser.parse_args(["eval", "evals/tasks/smoke.jsonl", "--baseline", "evals/baselines/smoke.json", "--min-score", "1.0", "--no-regression"])
     assert parsed_eval.no_regression and parsed_eval.min_score == 1.0
     parsed_mcp_add = parser.parse_args(["mcp", "add", "fs", "npx", "-y", "server", "."])
@@ -372,11 +409,23 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     run_id = agent.tracer.start("cli context")
     agent.tracer.event("prompt", {"message_count": 1})
     agent.tracer.end("ok")
-    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp add cli-demo python3 server.py --flag", "/mcp remove cli-demo", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/dream", "/dream backlog", "/dream verify", "/dream apply --limit 2 --min-confidence 0.8", "/loop list", "/loop show dream-loop", "/workflow", "/run sandbox_info {}", "/unknown"]:
+    agent.observability.record("policy.denied", tags={"tool": "shell", "risk": "critical"})
+    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/metrics", "/metrics alerts", "/metrics prometheus", "/sandbox", "/sandbox smoke", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp add cli-demo python3 server.py --flag", "/mcp remove cli-demo", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/dream", "/dream backlog", "/dream verify", "/dream apply --limit 2 --min-confidence 0.8", "/loop list", "/loop show dream-loop", "/workflow", "/run sandbox_info {}", "/unknown"]:
         assert handle_command(agent, line) is True
     assert handle_command(agent, "/exit") is False
     output = capsys.readouterr().out
-    assert "Commands:" in output and "Sandbox root" in output and "Evolution audit" in output and "Dream report" in output and "Evolution status" in output and "Unknown command" in output
+    assert "Commands:" in output and "Sandbox root" in output and "Evolution audit" in output and "Dream report" in output and "Evolution status" in output and "evolva_policy_denied_total" in output and "Unknown command" in output
+
+    assert metrics_cmd(Namespace(metrics_cmd="list", limit=5)) == 0
+    assert "policy.denied" in capsys.readouterr().out
+    assert metrics_cmd(Namespace(metrics_cmd="alerts", limit=5)) == 0
+    assert "policy-denied-any" in capsys.readouterr().out
+    assert metrics_cmd(Namespace(metrics_cmd="prometheus")) == 0
+    assert "evolva_policy_denied_total" in capsys.readouterr().out
+    assert sandbox_cmd(Namespace(sandbox_cmd="info")) == 0
+    assert "Sandbox root" in capsys.readouterr().out
+    assert sandbox_cmd(Namespace(sandbox_cmd="smoke", timeout=5)) == 0
+    assert "Sandbox smoke ok" in capsys.readouterr().out
 
 
 def test_cli_mcp_cmd_json_error_and_success(monkeypatch, capsys, temp_config):
@@ -394,13 +443,26 @@ def test_cli_mcp_cmd_json_error_and_success(monkeypatch, capsys, temp_config):
 def test_mcp_manager_add_remove_persists_config(tmp_path):
     cfg = tmp_path / "mcp" / "servers.json"
     manager = MCPManager(cfg, root=tmp_path)
-    added = manager.add_server("filesystem", "npx", ["-y", "@modelcontextprotocol/server-filesystem", "."])
+    added = manager.add_server(
+        "filesystem",
+        "npx",
+        ["-y", "@modelcontextprotocol/server-filesystem", "."],
+        request_timeout=7,
+        max_message_bytes=12345,
+    )
 
     assert added.name == "filesystem"
+    assert added.request_timeout == 7
+    assert added.max_message_bytes == 12345
     assert manager.list_servers() == ["filesystem"]
     data = json.loads(cfg.read_text())
     assert data["servers"]["filesystem"]["command"] == "npx"
     assert data["servers"]["filesystem"]["args"][-1] == "."
+    assert data["servers"]["filesystem"]["request_timeout"] == 7
+    assert data["servers"]["filesystem"]["max_message_bytes"] == 12345
+    reloaded = MCPManager(cfg, root=tmp_path)
+    assert reloaded.servers["filesystem"].request_timeout == 7
+    assert reloaded.servers["filesystem"].max_message_bytes == 12345
 
     assert manager.remove_server("filesystem") is True
     assert manager.list_servers() == []

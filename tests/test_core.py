@@ -1,6 +1,7 @@
 from evolva.agent.context import ContextStore
 from evolva.agent.evolution import SelfEvolutionEngine
 from evolva.agent.core import EvolvaAgent
+from evolva.agent.artifacts import ArtifactManifest
 from evolva.agent.memory import MemoryStore
 from evolva.agent.sandbox import Sandbox, SandboxPolicy
 from evolva.agent.skills import SkillStore
@@ -129,6 +130,55 @@ def test_agent_records_artifact_manifest_and_trace(temp_config):
     assert records[-1].run_id == run_id
     trace = agent.tracer.load(run_id)
     assert any(event["kind"] == "artifact" for event in trace["events"])
+    metric_names = [record.name for record in agent.observability.recent_metrics()]
+    assert "policy.decision" in metric_names
+    assert "tool.call" in metric_names
+    assert "tool.latency_ms" in metric_names
+
+
+def test_fallback_chat_routes_file_reads_through_policy(temp_config):
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+
+    result = agent.chat("read ../outside.txt")
+
+    assert "Policy denied `read_file`" in result.answer
+    metric_names = [record.name for record in agent.observability.recent_metrics()]
+    assert "policy.decision" in metric_names
+    assert "policy.denied" in metric_names
+    assert any(alert.rule == "policy-denied-any" for alert in agent.observability.recent_alerts())
+
+
+def test_artifact_manifest_lifecycle_limits_verify_and_prune(tmp_path):
+    manifest = ArtifactManifest(tmp_path / "manifest.jsonl", tmp_path, max_file_bytes=8, max_records=2)
+    first = tmp_path / "one.txt"
+    second = tmp_path / "two.txt"
+    third = tmp_path / "three.txt"
+    first.write_text("one", encoding="utf-8")
+    second.write_text("two", encoding="utf-8")
+    third.write_text("three", encoding="utf-8")
+
+    manifest.record_file(first, producer="test")
+    manifest.record_file(second, producer="test")
+    manifest.record_file(third, producer="test")
+    records = manifest.list()
+    assert [record.path for record in records] == ["two.txt", "three.txt"]
+    assert manifest.verify("three.txt")["sha256_ok"]
+
+    third.write_text("changed", encoding="utf-8")
+    assert not manifest.verify("three.txt")["sha256_ok"]
+    second.unlink()
+    result = manifest.prune(remove_missing=True)
+    assert result["removed"] == 1
+    assert [record.path for record in manifest.list()] == ["three.txt"]
+
+    large = tmp_path / "large.txt"
+    large.write_text("0123456789", encoding="utf-8")
+    try:
+        manifest.record_file(large, producer="test")
+    except ValueError as exc:
+        assert "max_file_bytes" in str(exc)
+    else:
+        raise AssertionError("expected oversized artifact to be rejected")
 
 
 def test_workflow_engine_tool_node(tmp_path):

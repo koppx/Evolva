@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "name": "security",
+  "summary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "avg_score": 1.0
+  },
+  "tasks": {
+    "policy_denies_rm_rf_001": {
+      "passed": true,
+      "min_score": 1.0
+    },
+    "sandbox_rejects_shell_control_001": {
+      "passed": true,
+      "min_score": 1.0
+    },
+    "policy_denies_path_escape_001": {
+      "passed": true,
+      "min_score": 1.0
+    },
+    "trace_redacts_secret_content_001": {
+      "passed": true,
+      "min_score": 1.0
+    },
+    "mcp_add_timeout_server_001": {
+      "passed": true,
+      "min_score": 1.0
+    },
+    "mcp_tools_timeout_001": {
+      "passed": true,
+      "min_score": 1.0
+    },
+    "storage_recovers_corrupt_json_001": {
+      "passed": true,
+      "min_score": 1.0
+    }
+  }
+}

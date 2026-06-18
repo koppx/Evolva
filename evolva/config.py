@@ -81,6 +81,21 @@ def _runtime_float(key: str, env_name: str, default: float) -> float:
         return default
 
 
+def _runtime_bool(env_name: str, default: bool) -> bool:
+    raw = os.getenv(env_name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _runtime_int(env_name: str, default: int) -> int:
+    raw = os.getenv(env_name)
+    try:
+        return int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
 def mask_secret(value: str | None) -> str:
     """Return a safe display form for secrets."""
 
@@ -100,6 +115,8 @@ class AgentConfig:
     context_file: Path = ROOT / "evolva" / "context" / "context.json"
     todo_file: Path = ROOT / "evolva" / "todo" / "todos.json"
     traces_dir: Path = ROOT / "evolva" / "traces"
+    metrics_file: Path = ROOT / "evolva" / "metrics" / "metrics.jsonl"
+    alerts_file: Path = ROOT / "evolva" / "metrics" / "alerts.jsonl"
     artifacts_file: Path = ROOT / "evolva" / "artifacts" / "manifest.jsonl"
     eval_results_dir: Path = ROOT / "evolva" / "eval_results"
     dreams_dir: Path = ROOT / "evolva" / "dreams"
@@ -110,7 +127,17 @@ class AgentConfig:
     mcp_config_file: Path = ROOT / "evolva" / "mcp" / "servers.json"
     repo_index_file: Path = ROOT / "evolva" / "repo_index" / "index.json"
     sandbox_allow_shell: bool = os.getenv("EVOLVA_SANDBOX_ALLOW_SHELL", "1") != "0"
+    sandbox_backend: str = os.getenv("EVOLVA_SANDBOX_BACKEND", "local")
+    sandbox_container_image: str = os.getenv("EVOLVA_SANDBOX_CONTAINER_IMAGE", "python:3.12-slim")
+    sandbox_container_network: str = os.getenv("EVOLVA_SANDBOX_CONTAINER_NETWORK", "none")
+    sandbox_container_read_only: bool = _runtime_bool("EVOLVA_SANDBOX_CONTAINER_READ_ONLY", True)
+    sandbox_container_memory: str = os.getenv("EVOLVA_SANDBOX_CONTAINER_MEMORY", "512m")
+    sandbox_container_cpus: str = os.getenv("EVOLVA_SANDBOX_CONTAINER_CPUS", "1")
+    sandbox_container_pids_limit: int = _runtime_int("EVOLVA_SANDBOX_CONTAINER_PIDS_LIMIT", 128)
+    sandbox_container_user: str = os.getenv("EVOLVA_SANDBOX_CONTAINER_USER", "")
     tracing_enabled: bool = os.getenv("EVOLVA_TRACING", "1") != "0"
+    observability_enabled: bool = os.getenv("EVOLVA_OBSERVABILITY", "1") != "0"
+    profile: str = os.getenv("EVOLVA_PROFILE", "dev")
     model: str = field(default_factory=lambda: _runtime_value("model", "OPENAI_MODEL", "gpt-4o-mini") or "gpt-4o-mini")
     api_key: str | None = field(default_factory=lambda: _runtime_value("api_key", "OPENAI_API_KEY", None))
     base_url: str = field(default_factory=lambda: _runtime_value("base_url", "OPENAI_BASE_URL", "https://api.openai.com/v1") or "https://api.openai.com/v1")
@@ -124,6 +151,10 @@ class AgentConfig:
         # config without passing newly added paths.
         if self.root != ROOT and self.artifacts_file == ROOT / "evolva" / "artifacts" / "manifest.jsonl":
             object.__setattr__(self, "artifacts_file", self.root / "evolva" / "artifacts" / "manifest.jsonl")
+        if self.root != ROOT and self.metrics_file == ROOT / "evolva" / "metrics" / "metrics.jsonl":
+            object.__setattr__(self, "metrics_file", self.root / "evolva" / "metrics" / "metrics.jsonl")
+        if self.root != ROOT and self.alerts_file == ROOT / "evolva" / "metrics" / "alerts.jsonl":
+            object.__setattr__(self, "alerts_file", self.root / "evolva" / "metrics" / "alerts.jsonl")
         if self.root != ROOT and self.runtime_config_file == LOCAL_RUNTIME_CONFIG_FILE:
             object.__setattr__(self, "runtime_config_file", self.root / "evolva" / "runtime" / "config.json")
 
@@ -134,6 +165,8 @@ class AgentConfig:
         self.context_file.parent.mkdir(parents=True, exist_ok=True)
         self.todo_file.parent.mkdir(parents=True, exist_ok=True)
         self.traces_dir.mkdir(parents=True, exist_ok=True)
+        self.metrics_file.parent.mkdir(parents=True, exist_ok=True)
+        self.alerts_file.parent.mkdir(parents=True, exist_ok=True)
         self.artifacts_file.parent.mkdir(parents=True, exist_ok=True)
         self.eval_results_dir.mkdir(parents=True, exist_ok=True)
         self.dreams_dir.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from dataclasses import dataclass, field, replace
@@ -15,7 +14,8 @@ from evolva.agent.llm import OpenAICompatibleLLM
 from evolva.agent.memory import MemoryStore
 from evolva.agent.mcp import MCPManager
 from evolva.agent.multi_agent import MultiAgentCoordinator
-from evolva.agent.policy import PolicyConfig, PolicyEngine
+from evolva.agent.observability import ObservabilitySink
+from evolva.agent.policy import PolicyConfig, PolicyDecision, PolicyEngine
 from evolva.agent.sandbox import Sandbox, SandboxPolicy
 from evolva.agent.skills import SkillStore
 from evolva.agent.todo import TodoStore
@@ -70,9 +70,24 @@ class EvolvaAgent:
         self.skills = SkillStore(self.config.skills_dir)
         self.context = ContextStore(self.config.context_file)
         self.todos = TodoStore(self.config.todo_file)
-        self.sandbox = Sandbox(SandboxPolicy(self.config.root, self.config.workspace, self.config.sandbox_allow_shell))
-        self.policy = PolicyEngine(PolicyConfig(self.config.root, self.config.workspace))
-        self.tracer = TraceRecorder(self.config.traces_dir, enabled=self.config.tracing_enabled)
+        self.sandbox = Sandbox(
+            SandboxPolicy(
+                self.config.root,
+                self.config.workspace,
+                self.config.sandbox_allow_shell,
+                backend=self.config.sandbox_backend,
+                container_image=self.config.sandbox_container_image,
+                container_network=self.config.sandbox_container_network,
+                container_read_only=self.config.sandbox_container_read_only,
+                container_memory=self.config.sandbox_container_memory,
+                container_cpus=self.config.sandbox_container_cpus,
+                container_pids_limit=self.config.sandbox_container_pids_limit,
+                container_user=self.config.sandbox_container_user,
+            )
+        )
+        self.policy = PolicyEngine(PolicyConfig(self.config.root, self.config.workspace, profile=self.config.profile))
+        self.observability = ObservabilitySink(self.config.metrics_file, self.config.alerts_file, enabled=self.config.observability_enabled)
+        self.tracer = TraceRecorder(self.config.traces_dir, enabled=self.config.tracing_enabled, observability=self.observability)
         self.artifacts = ArtifactManifest(self.config.artifacts_file, self.config.root)
         self.mcp = MCPManager(self.config.mcp_config_file, root=self.config.root)
         self.llm = OpenAICompatibleLLM(self.config)
@@ -264,11 +279,16 @@ class EvolvaAgent:
 
     def _call_tool(self, name: str, args: dict[str, Any]) -> ToolResult:
         try:
-            policy = self.policy.check_tool(name, args)
+            try:
+                tool = self.tools.get(name)
+            except KeyError as exc:
+                policy = PolicyDecision(False, "high", f"Unknown tool: {name}", False, [], [], ["unknown_tool"])
+                self.tracer.event("policy_decision", {"tool": name, "args": args, **policy.to_dict()})
+                return ToolResult(False, f"Tool error: {exc}")
+            policy = self.policy.check_tool(name, args, capabilities=tool.capabilities)
             self.tracer.event("policy_decision", {"tool": name, "args": args, **policy.to_dict()})
             if not policy.allowed:
                 return ToolResult(False, f"Policy denied `{name}`: {policy.reason}", policy.to_dict())
-            tool = self.tools.get(name)
             needs_confirmation = tool.needs_confirmation or policy.requires_confirmation
             if needs_confirmation and not self.assume_yes:
                 if self.confirmer is not None:
@@ -333,13 +353,13 @@ class EvolvaAgent:
             self.memory.add("fact", content, source="user")
             return TurnResult("已记住。")
         if "list" in lower and "file" in lower or "列" in text and "文件" in text:
-            result = self.tools.call("list_files", {"path": "."})
+            result = self._call_tool("list_files", {"path": "."})
             return TurnResult(result.output, [result.output], [] if result.ok else ["list_files"])
         if lower.startswith("read "):
-            result = self.tools.call("read_file", {"path": text.split(maxsplit=1)[1]})
+            result = self._call_tool("read_file", {"path": text.split(maxsplit=1)[1]})
             return TurnResult(result.output, [result.output], [] if result.ok else ["read_file"])
         if lower.startswith("search "):
-            result = self.tools.call("web_search", {"query": text.split(maxsplit=1)[1]})
+            result = self._call_tool("web_search", {"query": text.split(maxsplit=1)[1]})
             return TurnResult(result.output, [result.output], [] if result.ok else ["web_search"])
         help_text = (
             "未配置 OPENAI_API_KEY，当前处于规则模式。\n"

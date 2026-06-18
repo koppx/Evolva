@@ -6,6 +6,10 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
+.coverage
+build/
+dist/
+htmlcov/
 
 # Virtual env / IDE
 .venv/
@@ -17,6 +21,7 @@ evolva/context/
 evolva/memory/
 evolva/todo/
 evolva/traces/
+evolva/metrics/
 evolva/eval_results/
 evolva/dreams/
 evolva/optimization_reports/

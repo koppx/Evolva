@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
+
+from evolva.storage import atomic_update_json, atomic_write_json, read_json
 
 TodoStatus = Literal["pending", "in_progress", "blocked", "done", "cancelled"]
 
@@ -46,43 +47,65 @@ class TodoStore:
         title = title.strip()
         if not title:
             raise ValueError("todo title is required")
-        items = self._load()
-        next_id = max((item.id for item in items), default=0) + 1
-        item = TodoItem(id=next_id, title=title, detail=detail.strip(), owner=owner.strip() or "Evolva")
-        items.append(item)
-        self._save(items)
-        return item
+        created: TodoItem | None = None
+
+        def update(raw: object) -> list[dict]:
+            nonlocal created
+            items = self._items_from_raw(raw)
+            next_id = max((item.id for item in items), default=0) + 1
+            created = TodoItem(id=next_id, title=title, detail=detail.strip(), owner=owner.strip() or "Evolva")
+            items.append(created)
+            return [asdict(x) for x in items]
+
+        atomic_update_json(self.path, [], update)
+        assert created is not None
+        return created
 
     def update(self, todo_id: int, *, status: str | None = None, title: str | None = None, detail: str | None = None, owner: str | None = None) -> TodoItem:
-        items = self._load()
-        for item in items:
-            if item.id != todo_id:
-                continue
-            if status is not None:
-                if status not in self.VALID_STATUSES:
-                    raise ValueError(f"invalid status: {status}")
-                item.status = status  # type: ignore[assignment]
-            if title is not None and title.strip():
-                item.title = title.strip()
-            if detail is not None:
-                item.detail = detail.strip()
-            if owner is not None and owner.strip():
-                item.owner = owner.strip()
-            item.updated_at = time.time()
-            self._save(items)
-            return item
-        raise KeyError(f"todo not found: {todo_id}")
+        updated: TodoItem | None = None
+
+        def apply_update(raw: object) -> list[dict]:
+            nonlocal updated
+            items = self._items_from_raw(raw)
+            for item in items:
+                if item.id != todo_id:
+                    continue
+                if status is not None:
+                    if status not in self.VALID_STATUSES:
+                        raise ValueError(f"invalid status: {status}")
+                    item.status = status  # type: ignore[assignment]
+                if title is not None and title.strip():
+                    item.title = title.strip()
+                if detail is not None:
+                    item.detail = detail.strip()
+                if owner is not None and owner.strip():
+                    item.owner = owner.strip()
+                item.updated_at = time.time()
+                updated = item
+                break
+            if updated is None:
+                raise KeyError(f"todo not found: {todo_id}")
+            return [asdict(x) for x in items]
+
+        atomic_update_json(self.path, [], apply_update)
+        assert updated is not None
+        return updated
 
     def clear(self, *, include_done: bool = False) -> int:
-        items = self._load()
-        if include_done:
-            count = len(items)
-            self._save([])
-            return count
-        kept = [x for x in items if x.status not in {"done", "cancelled"}]
-        count = len(items) - len(kept)
-        self._save(kept)
-        return count
+        removed = 0
+
+        def apply_clear(raw: object) -> list[dict]:
+            nonlocal removed
+            items = self._items_from_raw(raw)
+            if include_done:
+                removed = len(items)
+                return []
+            kept = [x for x in items if x.status not in {"done", "cancelled"}]
+            removed = len(items) - len(kept)
+            return [asdict(x) for x in kept]
+
+        atomic_update_json(self.path, [], apply_clear)
+        return removed
 
     def context(self, limit: int = 12) -> str:
         items = self.list(include_done=False)[-limit:]
@@ -103,11 +126,17 @@ class TodoStore:
     def _load(self) -> list[TodoItem]:
         if not self.path.exists():
             return []
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return []
-        return [TodoItem(**row) for row in raw if isinstance(row, dict)]
+        raw = read_json(self.path, [])
+        return self._items_from_raw(raw)
 
     def _save(self, items: list[TodoItem]) -> None:
-        self.path.write_text(json.dumps([asdict(x) for x in items], ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(self.path, [asdict(x) for x in items])
+
+    def _items_from_raw(self, raw: object) -> list[TodoItem]:
+        if not isinstance(raw, list):
+            return []
+        items: list[TodoItem] = []
+        for row in raw:
+            if isinstance(row, dict):
+                items.append(TodoItem(**row))
+        return items

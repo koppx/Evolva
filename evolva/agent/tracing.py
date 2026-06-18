@@ -7,6 +7,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from evolva.agent.observability import ObservabilitySink
+from evolva.agent.redaction import Redactor
+from evolva.storage import atomic_write_json
+
 
 TRACE_SCHEMA_VERSION = "trace.v1"
 
@@ -48,9 +52,11 @@ class TraceRun:
 class TraceRecorder:
     """JSON trace recorder for observability, replay, and diagnostics."""
 
-    def __init__(self, traces_dir: Path, *, enabled: bool = True):
+    def __init__(self, traces_dir: Path, *, enabled: bool = True, redactor: Redactor | None = None, observability: ObservabilitySink | None = None):
         self.traces_dir = traces_dir
         self.enabled = enabled
+        self.redactor = redactor or Redactor()
+        self.observability = observability
         self.current: TraceRun | None = None
         self._event_seq = 0
         self.traces_dir.mkdir(parents=True, exist_ok=True)
@@ -93,19 +99,20 @@ class TraceRecorder:
         event = TraceEvent(
             ts=time.time(),
             kind=kind,
-            data=data or {},
+            data=self.redactor.redact_json(data or {}),
             event_id=event_id,
             span_id=span_id,
             parent_id=parent_id,
         )
         self.current.events.append(event)
+        self._record_observability(event)
         return event_id
 
     def end(self, final_answer: str, *, status: str = "completed") -> Path | None:
         if not self.enabled or self.current is None:
             self.current = None
             return None
-        self.current.final_answer = final_answer
+        self.current.final_answer = self.redactor.redact_text(final_answer)
         self.current.status = status
         self.current.ended_at = time.time()
         self.current.summary = self._summarize_run(self.current)
@@ -219,7 +226,44 @@ class TraceRecorder:
 
     def _write(self, path: Path, run: TraceRun) -> None:
         data = asdict(run)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, data)
+
+    def _record_observability(self, event: TraceEvent) -> None:
+        if self.observability is None:
+            return
+        try:
+            data = event.data or {}
+            if event.kind == "policy_decision":
+                allowed = bool(data.get("allowed", True))
+                tags = {"tool": data.get("tool", ""), "risk": data.get("risk", ""), "allowed": str(allowed).lower()}
+                fields = {"reason": data.get("reason", ""), "audit_tags": data.get("audit_tags", [])}
+                self.observability.record("policy.decision", tags=tags, fields=fields)
+                if not allowed:
+                    self.observability.record("policy.denied", tags={key: value for key, value in tags.items() if key != "allowed"}, fields=fields)
+                redactions = data.get("redactions", []) or []
+                if redactions:
+                    self.observability.record("redaction.hit", value=len(redactions), tags={"tool": data.get("tool", ""), "source": "policy_decision"}, fields={"redactions": redactions})
+            elif event.kind == "tool_call":
+                ok = bool(data.get("ok", False))
+                tags = {"tool": data.get("tool", ""), "ok": str(ok).lower()}
+                self.observability.record("tool.call", tags=tags)
+                latency = data.get("latency_ms")
+                if latency is not None:
+                    self.observability.record("tool.latency_ms", value=float(latency), unit="ms", tags=tags)
+                if not ok:
+                    output = str(data.get("output", ""))
+                    self.observability.record("tool.failure", tags={"tool": data.get("tool", "")}, fields={"output": output[:1000]})
+                    if "mcp request timed out" in output.lower():
+                        self.observability.record("mcp.timeout", tags={"tool": data.get("tool", "")}, fields={"output": output[:1000]})
+            elif event.kind == "tool_error":
+                error = str(data.get("error", ""))
+                self.observability.record("tool.error", tags={"tool": data.get("tool", "")}, fields={"error": error[:1000]})
+                if "mcp request timed out" in error.lower():
+                    self.observability.record("mcp.timeout", tags={"tool": data.get("tool", "")}, fields={"error": error[:1000]})
+            elif event.kind == "artifact_error":
+                self.observability.record("artifact.error", tags={"tool": data.get("tool", "")}, fields={"error": str(data.get("error", ""))[:1000]})
+        except Exception:
+            return
 
     def _summarize_run(self, run: TraceRun) -> dict[str, Any]:
         data = asdict(run)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 
@@ -18,6 +18,7 @@ class Tool:
     schema: dict[str, Any]
     func: Callable[..., ToolResult]
     needs_confirmation: bool = False
+    capabilities: list[str] = field(default_factory=list)
 
 
 class ToolRegistry:
@@ -39,7 +40,8 @@ class ToolRegistry:
         lines = []
         for name in self.names():
             t = self._tools[name]
-            lines.append(f"- {name}: {t.description}; schema={t.schema}")
+            capabilities = f"; capabilities={t.capabilities}" if t.capabilities else ""
+            lines.append(f"- {name}: {t.description}; schema={t.schema}{capabilities}")
         return "\n".join(lines)
 
     def call(self, name: str, args: dict[str, Any]) -> ToolResult:

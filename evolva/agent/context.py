@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from evolva.storage import atomic_update_json, atomic_write_json, read_json
+
 ContextKind = Literal["message", "note", "artifact", "summary", "decision"]
 
 
@@ -37,11 +39,15 @@ class ContextStore:
         if not content:
             raise ValueError("context content is required")
         item = ContextItem(kind=kind, content=content, role=role, meta=meta or {})
-        items = self._load()
-        items.append(item)
-        if len(items) > self.max_items:
-            items = items[-self.max_items :]
-        self._save(items)
+
+        def update(raw: Any) -> list[dict[str, Any]]:
+            items = self._items_from_raw(raw)
+            items.append(item)
+            if len(items) > self.max_items:
+                items = items[-self.max_items :]
+            return [asdict(x) for x in items]
+
+        atomic_update_json(self.path, [], update)
         return item
 
     def recent(self, limit: int = 12, *, kinds: list[str] | None = None) -> list[ContextItem]:
@@ -95,11 +101,15 @@ class ContextStore:
     def _load(self) -> list[ContextItem]:
         if not self.path.exists():
             return []
-        rows = []
-        for row in json.loads(self.path.read_text(encoding="utf-8") or "[]"):
+        return self._items_from_raw(read_json(self.path, []))
+
+    def _save(self, items: list[ContextItem]) -> None:
+        atomic_write_json(self.path, [asdict(x) for x in items])
+
+    def _items_from_raw(self, raw: Any) -> list[ContextItem]:
+        rows: list[ContextItem] = []
+        source = raw if isinstance(raw, list) else []
+        for row in source:
             if isinstance(row, dict):
                 rows.append(ContextItem(**row))
         return rows
-
-    def _save(self, items: list[ContextItem]) -> None:
-        self.path.write_text(json.dumps([asdict(x) for x in items], ensure_ascii=False, indent=2), encoding="utf-8")

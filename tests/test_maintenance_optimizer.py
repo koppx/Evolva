@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from evolva.maintenance.optimizer import DailyOptimizer, run_daily_optimization
 
 

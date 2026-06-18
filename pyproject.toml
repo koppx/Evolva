@@ -11,7 +11,7 @@ include = ["evolva*"]
 exclude = ["assets*", "evals*", "tests*"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "coverage[toml]>=7.0", "ruff>=0.6", "mypy>=1.8", "build>=1.0"]
 
 [project.scripts]
 evolva = "evolva.cli:main"
@@ -26,3 +26,39 @@ package = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["evolva"]
+omit = [
+  "evolva/runtime/*",
+  "evolva/workspace/*",
+]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+target-version = "py310"
+line-length = 160
+extend-exclude = [
+  "evolva/context",
+  "evolva/memory",
+  "evolva/todo",
+  "evolva/traces",
+  "evolva/eval_results",
+  "evolva/dreams",
+  "evolva/workspace",
+  "evolva/runtime",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+follow_imports = "skip"
+check_untyped_defs = false
+warn_unused_ignores = false

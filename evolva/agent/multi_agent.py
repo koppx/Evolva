@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
 
 from evolva.agent.llm import OpenAICompatibleLLM
 from evolva.agent.memory import MemoryStore

@@ -7,6 +7,7 @@ from pathlib import Path
 from dataclasses import asdict
 from typing import Callable
 
+from evolva.agent.capabilities import DEFAULT_TOOL_CAPABILITIES
 from evolva.agent.context import ContextStore
 from evolva.agent.memory import MemoryStore
 from evolva.agent.mcp import MCPManager, render_mcp_result
@@ -32,6 +33,9 @@ def build_registry(
     dream_runner: Callable[..., tuple[str, dict]] | None = None,
 ) -> ToolRegistry:
     reg = ToolRegistry()
+
+    def caps(tool_name: str) -> list[str]:
+        return [cap.value for cap in DEFAULT_TOOL_CAPABILITIES.get(tool_name, [])]
 
     def list_files(path: str = ".", max_entries: int = 200) -> ToolResult:
         p = sandbox.resolve(path)
@@ -185,13 +189,32 @@ def build_registry(
         names = mcp.list_servers()
         return ToolResult(True, "\n".join(names) or "No MCP servers configured", names)
 
-    def mcp_add_server(name: str, command: str, args: list[str] | None = None, env: dict | None = None, cwd: str | None = None) -> ToolResult:
+    def mcp_add_server(
+        name: str,
+        command: str,
+        args: list[str] | None = None,
+        env: dict | None = None,
+        cwd: str | None = None,
+        request_timeout: int = 30,
+        max_message_bytes: int = 2_000_000,
+    ) -> ToolResult:
         if mcp is None:
             return ToolResult(False, "MCP manager is not configured")
-        config = mcp.add_server(name, command, list(args or []), env=dict(env or {}), cwd=cwd)
+        config = mcp.add_server(name, command, list(args or []), env=dict(env or {}), cwd=cwd, request_timeout=int(request_timeout), max_message_bytes=int(max_message_bytes))
         output = f"Added MCP server `{config.name}`: {config.command} {' '.join(config.args)}".strip()
         context.add("artifact", output, meta={"server": config.name, "config_file": str(mcp.config_file)})
-        return ToolResult(True, output, {"name": config.name, "command": config.command, "args": config.args, "config_file": str(mcp.config_file)})
+        return ToolResult(
+            True,
+            output,
+            {
+                "name": config.name,
+                "command": config.command,
+                "args": config.args,
+                "config_file": str(mcp.config_file),
+                "request_timeout": config.request_timeout,
+                "max_message_bytes": config.max_message_bytes,
+            },
+        )
 
     def mcp_remove_server(name: str) -> ToolResult:
         if mcp is None:
@@ -238,34 +261,34 @@ def build_registry(
         output, data = dream_runner(int(limit), bool(apply), bool(verify))
         return ToolResult(True, output, data)
 
-    reg.register(Tool("list_files", "List files under the sandbox root", {"path": "str", "max_entries": "int"}, list_files))
-    reg.register(Tool("read_file", "Read a UTF-8 text file under the sandbox root", {"path": "str", "max_chars": "int"}, read_file))
-    reg.register(Tool("write_file", "Write or append a UTF-8 text file under the sandbox root", {"path": "str", "content": "str", "append": "bool"}, write_file))
-    reg.register(Tool("shell", "Run a shell command inside the sandbox", {"command": "str", "cwd": "str", "timeout": "int"}, shell, needs_confirmation=True))
-    reg.register(Tool("python_exec", "Run a short Python snippet in a sandboxed subprocess", {"code": "str", "timeout": "int"}, python_exec, needs_confirmation=True))
-    reg.register(Tool("web_search", "Search the web with DuckDuckGo HTML endpoint", {"query": "str", "max_results": "int"}, web_search))
-    reg.register(Tool("remember", "Store a long-term memory item", {"kind": "str", "content": "str", "confidence": "float"}, remember))
-    reg.register(Tool("recall", "Search long-term memory", {"query": "str"}, recall))
-    reg.register(Tool("list_skills", "List available skills", {}, list_skills))
-    reg.register(Tool("save_skill", "Create or update a markdown skill", {"name": "str", "content": "str"}, save_skill))
-    reg.register(Tool("context_add", "Add a note, artifact, summary, decision, or message to persistent context", {"kind": "str", "content": "str", "role": "str"}, context_add))
-    reg.register(Tool("context_view", "View/search persistent context", {"query": "str", "limit": "int"}, context_view))
-    reg.register(Tool("context_compact", "Summarize recent context into a compact summary item", {"title": "str", "limit": "int"}, context_compact))
-    reg.register(Tool("todo_add", "Add a todo item", {"title": "str", "detail": "str", "owner": "str"}, todo_add))
-    reg.register(Tool("todo_list", "List todo items", {"include_done": "bool"}, todo_list))
-    reg.register(Tool("todo_update", "Update a todo item", {"todo_id": "int", "status": "str", "title": "str", "detail": "str", "owner": "str"}, todo_update))
-    reg.register(Tool("todo_clear", "Clear completed/cancelled todos, or all todos if include_done=true", {"include_done": "bool"}, todo_clear))
-    reg.register(Tool("sandbox_info", "Show sandbox root, workspace, and policy", {}, sandbox_info))
-    reg.register(Tool("policy_info", "Show guardrail policy configuration", {}, policy_info))
-    reg.register(Tool("policy_check", "Preview whether policy allows a tool call", {"tool_name": "str", "args": "dict"}, policy_check))
-    reg.register(Tool("repo_index_build", "Build a local semantic repository index with symbol chunks", {"max_files": "int"}, repo_index_build))
-    reg.register(Tool("repo_index_search", "Search repository symbols, references, paths, and code chunks", {"query": "str", "limit": "int"}, repo_index_search))
-    reg.register(Tool("mcp_servers", "List configured MCP servers", {}, mcp_servers))
-    reg.register(Tool("mcp_add_server", "Persist a stdio MCP server config", {"name": "str", "command": "str", "args": "list[str]", "env": "dict", "cwd": "str"}, mcp_add_server))
-    reg.register(Tool("mcp_remove_server", "Remove a configured MCP server", {"name": "str"}, mcp_remove_server))
-    reg.register(Tool("mcp_tools", "List tools from configured MCP servers", {"server": "str"}, mcp_tools))
-    reg.register(Tool("mcp_call", "Call an MCP tool via stdio JSON-RPC", {"server": "str", "tool": "str", "arguments": "dict"}, mcp_call, needs_confirmation=True))
-    reg.register(Tool("delegate_agent", "Delegate a task to a role agent: planner, researcher, coder, reviewer", {"role": "str", "task": "str", "context_text": "str"}, delegate_agent))
-    reg.register(Tool("collaborate", "Run a task through multiple role agents", {"task": "str", "roles": "list[str]", "context_text": "str"}, collaborate))
-    reg.register(Tool("dream_report", "Run or verify the local Dream self-evolution loop over trace/eval/evolution evidence", {"limit": "int", "apply": "bool", "verify": "bool"}, dream_report))
+    reg.register(Tool("list_files", "List files under the sandbox root", {"path": "str", "max_entries": "int"}, list_files, capabilities=caps("list_files")))
+    reg.register(Tool("read_file", "Read a UTF-8 text file under the sandbox root", {"path": "str", "max_chars": "int"}, read_file, capabilities=caps("read_file")))
+    reg.register(Tool("write_file", "Write or append a UTF-8 text file under the sandbox root", {"path": "str", "content": "str", "append": "bool"}, write_file, capabilities=caps("write_file")))
+    reg.register(Tool("shell", "Run a shell command inside the sandbox", {"command": "str", "cwd": "str", "timeout": "int"}, shell, needs_confirmation=True, capabilities=caps("shell")))
+    reg.register(Tool("python_exec", "Run a short Python snippet in a sandboxed subprocess", {"code": "str", "timeout": "int"}, python_exec, needs_confirmation=True, capabilities=caps("python_exec")))
+    reg.register(Tool("web_search", "Search the web with DuckDuckGo HTML endpoint", {"query": "str", "max_results": "int"}, web_search, capabilities=caps("web_search")))
+    reg.register(Tool("remember", "Store a long-term memory item", {"kind": "str", "content": "str", "confidence": "float"}, remember, capabilities=caps("remember")))
+    reg.register(Tool("recall", "Search long-term memory", {"query": "str"}, recall, capabilities=caps("recall")))
+    reg.register(Tool("list_skills", "List available skills", {}, list_skills, capabilities=caps("list_skills")))
+    reg.register(Tool("save_skill", "Create or update a markdown skill", {"name": "str", "content": "str"}, save_skill, capabilities=caps("save_skill")))
+    reg.register(Tool("context_add", "Add a note, artifact, summary, decision, or message to persistent context", {"kind": "str", "content": "str", "role": "str"}, context_add, capabilities=caps("context_add")))
+    reg.register(Tool("context_view", "View/search persistent context", {"query": "str", "limit": "int"}, context_view, capabilities=caps("context_view")))
+    reg.register(Tool("context_compact", "Summarize recent context into a compact summary item", {"title": "str", "limit": "int"}, context_compact, capabilities=caps("context_compact")))
+    reg.register(Tool("todo_add", "Add a todo item", {"title": "str", "detail": "str", "owner": "str"}, todo_add, capabilities=caps("todo_add")))
+    reg.register(Tool("todo_list", "List todo items", {"include_done": "bool"}, todo_list, capabilities=caps("todo_list")))
+    reg.register(Tool("todo_update", "Update a todo item", {"todo_id": "int", "status": "str", "title": "str", "detail": "str", "owner": "str"}, todo_update, capabilities=caps("todo_update")))
+    reg.register(Tool("todo_clear", "Clear completed/cancelled todos, or all todos if include_done=true", {"include_done": "bool"}, todo_clear, capabilities=caps("todo_clear")))
+    reg.register(Tool("sandbox_info", "Show sandbox root, workspace, and policy", {}, sandbox_info, capabilities=caps("sandbox_info")))
+    reg.register(Tool("policy_info", "Show guardrail policy configuration", {}, policy_info, capabilities=caps("policy_info")))
+    reg.register(Tool("policy_check", "Preview whether policy allows a tool call", {"tool_name": "str", "args": "dict"}, policy_check, capabilities=caps("policy_check")))
+    reg.register(Tool("repo_index_build", "Build a local semantic repository index with symbol chunks", {"max_files": "int"}, repo_index_build, capabilities=caps("repo_index_build")))
+    reg.register(Tool("repo_index_search", "Search repository symbols, references, paths, and code chunks", {"query": "str", "limit": "int"}, repo_index_search, capabilities=caps("repo_index_search")))
+    reg.register(Tool("mcp_servers", "List configured MCP servers", {}, mcp_servers, capabilities=caps("mcp_servers")))
+    reg.register(Tool("mcp_add_server", "Persist a stdio MCP server config", {"name": "str", "command": "str", "args": "list[str]", "env": "dict", "cwd": "str", "request_timeout": "int", "max_message_bytes": "int"}, mcp_add_server, capabilities=caps("mcp_add_server")))
+    reg.register(Tool("mcp_remove_server", "Remove a configured MCP server", {"name": "str"}, mcp_remove_server, capabilities=caps("mcp_remove_server")))
+    reg.register(Tool("mcp_tools", "List tools from configured MCP servers", {"server": "str"}, mcp_tools, capabilities=caps("mcp_tools")))
+    reg.register(Tool("mcp_call", "Call an MCP tool via stdio JSON-RPC", {"server": "str", "tool": "str", "arguments": "dict"}, mcp_call, needs_confirmation=True, capabilities=caps("mcp_call")))
+    reg.register(Tool("delegate_agent", "Delegate a task to a role agent: planner, researcher, coder, reviewer", {"role": "str", "task": "str", "context_text": "str"}, delegate_agent, capabilities=caps("delegate_agent")))
+    reg.register(Tool("collaborate", "Run a task through multiple role agents", {"task": "str", "roles": "list[str]", "context_text": "str"}, collaborate, capabilities=caps("collaborate")))
+    reg.register(Tool("dream_report", "Run or verify the local Dream self-evolution loop over trace/eval/evolution evidence", {"limit": "int", "apply": "bool", "verify": "bool"}, dream_report, capabilities=caps("dream_report")))
     return reg

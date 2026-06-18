@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json
 import hashlib
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from difflib import SequenceMatcher
+
+from evolva.storage import append_jsonl, atomic_write_jsonl, read_jsonl
 
 
 @dataclass
@@ -50,8 +51,7 @@ class MemoryStore:
         item = MemoryItem(kind=kind, content=content.strip(), confidence=confidence, source=source, evidence=evidence or [], status=status, supersedes=supersedes)
         if not item.content:
             return item
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
+        append_jsonl(self.path, asdict(item))
         return item
 
     def rollback(self, item_id: str, *, reason: str = "manual rollback") -> bool:
@@ -65,11 +65,7 @@ class MemoryStore:
                 changed = True
         if not changed:
             return False
-        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-        with tmp.open("w", encoding="utf-8") as f:
-            for item in items:
-                f.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
-        tmp.replace(self.path)
+        atomic_write_jsonl(self.path, [asdict(item) for item in items])
         return True
 
     def find_similar(self, kind: str, content: str, *, threshold: float = 0.92, limit: int = 500) -> MemoryItem | None:
@@ -118,11 +114,9 @@ class MemoryStore:
         if not self.path.exists():
             return []
         rows: list[MemoryItem] = []
-        for line in self.path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
+        for raw in read_jsonl(self.path):
             try:
-                rows.append(MemoryItem(**json.loads(line)))
+                rows.append(MemoryItem(**raw))
             except Exception:
                 continue
         return rows[-limit:]

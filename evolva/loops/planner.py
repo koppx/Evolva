@@ -766,7 +766,6 @@ Rules:
                 checkpoint_type = "phase_success"
             command = str(item.get("command") or "")
             if command and command not in commands:
-                safe = sanitize_command_candidates([command], warnings=warnings)
                 command = ""
                 warnings.append(f"Dropped checkpoint command for `{checkpoint_id}` because it is not in repository-adjusted command candidates.")
             checkpoints.append(

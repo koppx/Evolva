@@ -8,7 +8,7 @@ from typing import Any
 
 from evolva.agent.core import EvolvaAgent
 from evolva.config import AgentConfig
-from evolva.eval.scorers import ScoreCheck, ScoreReport, ScorerContext, ScorerRegistry, build_default_registry
+from evolva.eval.scorers import ScoreReport, ScorerContext, ScorerRegistry, build_default_registry
 
 
 @dataclass
@@ -58,9 +58,10 @@ class EvalHarness:
 
     def run_task(self, task: dict[str, Any]) -> EvalResult:
         started = time.time()
+        trace_run_id = ""
         if "tool" in task:
             tool_name = str(task["tool"])
-            self.agent.tracer.start(
+            trace_run_id = self.agent.tracer.start(
                 f"eval:{task.get('id', 'unnamed')}:{tool_name}",
                 meta={"runtime": "eval", "task_id": str(task.get("id", "unnamed")), "tool": tool_name},
             )
@@ -70,10 +71,12 @@ class EvalHarness:
             tool_logs = [f"TOOL {tool_name} ok={tool_result.ok}\n{tool_result.output}"]
         else:
             result = self.agent.chat(str(task["input"]))
+            rows = self.agent.tracer.list_runs(limit=1)
+            trace_run_id = str(rows[0]["run_id"]) if rows else ""
             answer = result.answer
             tool_logs = result.tool_logs
         duration_ms = int((time.time() - started) * 1000)
-        score_report = self.score_report(task, answer, tool_logs, duration_ms=duration_ms)
+        score_report = self.score_report(task, answer, tool_logs, duration_ms=duration_ms, trace_run_id=trace_run_id)
         checks = score_report.booleans()
         passed = score_report.passed if checks else bool(answer.strip())
         score = score_report.score
@@ -92,9 +95,9 @@ class EvalHarness:
         """Return legacy boolean checks for compatibility with existing callers."""
         return self.score_report(task, answer, tool_logs, duration_ms=duration_ms).booleans()
 
-    def score_report(self, task: dict[str, Any], answer: str, tool_logs: list[str], *, duration_ms: int | None = None) -> ScoreReport:
+    def score_report(self, task: dict[str, Any], answer: str, tool_logs: list[str], *, duration_ms: int | None = None, trace_run_id: str = "") -> ScoreReport:
         """Run registered scorers and return a weighted, explainable score report."""
-        context = ScorerContext(root=self.config.root, answer=answer, tool_logs=tool_logs, duration_ms=duration_ms, agent=self.agent)
+        context = ScorerContext(root=self.config.root, answer=answer, tool_logs=tool_logs, duration_ms=duration_ms, agent=self.agent, trace_run_id=trace_run_id)
         return self.scorers.run(task, context)
 
     def _safe_artifact_path(self, artifact: str) -> Path | None:

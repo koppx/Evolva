@@ -757,9 +757,8 @@ def validate_loop_spec(spec: LoopSpec, *, agent: Any | None = None, strict_polic
     errors: list[str] = []
     warnings: list[str] = []
     try:
-        order = spec.validate_order()
+        spec.validate_order()
     except ValueError as exc:
-        order = []
         errors.append(str(exc))
     phase_ids = {phase.id for phase in spec.phases}
     known_tools = set(agent.tools.names()) if agent is not None else set()

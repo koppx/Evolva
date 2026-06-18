@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Evolva Production Hardening Summary</title>
+  <style>
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 40px; color: #171717; }
+    main { max-width: 980px; margin: 0 auto; }
+    h1, h2 { line-height: 1.2; }
+    code { background: #f4f4f5; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    .status { padding: 12px 16px; border: 1px solid #d4d4d8; border-radius: 8px; background: #fafafa; }
+    details { margin: 14px 0; padding: 12px 16px; border: 1px solid #e4e4e7; border-radius: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Evolva Production Hardening Summary</h1>
+  <div class="status">
+    <strong>Status:</strong> PASS_WITH_NOTES. Regression passed: <code>138 passed, 1 skipped</code>; coverage gate passed at <code>80%</code>; security eval passed <code>7/7</code>.
+  </div>
+  <h2>Problem</h2>
+  <p>Strengthen Evolva from a local-first agent harness into a safer, auditable, and more recoverable production-grade agent infrastructure foundation.</p>
+  <h2>Planned Changes</h2>
+  <ul>
+    <li>Added capability-aware policy decisions and tool metadata.</li>
+    <li>Implemented structured command execution without <code>shell=True</code>.</li>
+    <li>Added optional Docker/container sandbox backend with disabled network, read-only root, tmpfs, resource limits, and user mapping.</li>
+    <li>Added fixed sandbox smoke checks through <code>/sandbox smoke</code> and <code>evolva sandbox smoke</code>.</li>
+    <li>Applied trace redaction before persistence.</li>
+    <li>Added atomic local state helpers and migrated core stores.</li>
+    <li>Added MCP request timeouts, bounded reads, and atomic config persistence for timeout/message-size knobs.</li>
+    <li>Added artifact manifest limits, digest verification, and pruning.</li>
+    <li>Added local JSONL metrics and alert rules derived from trace events.</li>
+    <li>Added Prometheus text export plus <code>/metrics</code> and <code>evolva metrics</code> inspection commands.</li>
+    <li>Routed fallback-mode list/read/search interactions through the policy and observability path.</li>
+    <li>Added security evals with exact trace-run scorer binding, metric assertions, and safe-glob recovery artifact checks.</li>
+    <li>Added CI gates for Python 3.10/3.11/3.12, lint, scoped typing, coverage, build, and evals.</li>
+    <li>Added focused unit, integration, and failure tests.</li>
+    <li>Added a Chinese production technical scheme with per-module function, verification, tests, and observability mapping.</li>
+  </ul>
+  <details open>
+    <summary>Validation</summary>
+    <ul>
+      <li><code>PYTHONPYCACHEPREFIX=/private/tmp/evolva-pycache python3 -m compileall evolva</code> passed.</li>
+      <li><code>git diff --check</code> passed.</li>
+      <li><code>uv run pytest tests/test_sandbox_policy_tools.py tests/test_state_stores.py tests/test_agent_cli_workflow_mcp_eval_tui.py tests/test_loops.py -q</code>: 86 passed, 1 skipped.</li>
+      <li><code>uv run pytest -q</code>: 131 passed, 1 skipped.</li>
+      <li><code>uv run --extra dev ruff check evolva tests</code> passed.</li>
+      <li><code>uv run --extra dev mypy evolva/agent/capabilities.py evolva/agent/observability.py evolva/agent/redaction.py evolva/agent/sandbox.py evolva/storage.py evolva/agent/mcp.py evolva/eval/scorers.py evolva/tools/builtin.py</code> passed.</li>
+      <li><code>uv run --extra dev coverage run -m pytest -q</code>: 138 passed, 1 skipped.</li>
+      <li><code>uv run --extra dev coverage report</code>: total coverage 80%, above the 75% gate.</li>
+      <li><code>uv run --extra dev python -m build</code> passed.</li>
+      <li><code>uv run --extra dev python -m evolva.cli eval evals/tasks/smoke.jsonl --yes --baseline evals/baselines/smoke.json --min-score 1.0 --no-regression</code>: 2/2 passed.</li>
+      <li><code>uv run --extra dev python -m evolva.cli eval evals/tasks/repo_index.jsonl --yes --baseline evals/baselines/repo_index.json --min-score 1.0 --no-regression</code>: 2/2 passed.</li>
+      <li><code>uv run --extra dev python -m evolva.cli eval evals/tasks/security.jsonl --yes --baseline evals/baselines/security.json --min-score 1.0 --no-regression</code>: 7/7 passed.</li>
+      <li><code>uv run --extra dev pytest tests/test_state_stores.py tests/test_agent_cli_workflow_mcp_eval_tui.py -q</code>: 50 passed, 1 skipped.</li>
+      <li><code>uv run --extra dev pytest tests/test_sandbox_policy_tools.py tests/test_agent_cli_workflow_mcp_eval_tui.py -q</code>: 44 passed, 1 skipped.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>Residual Risks</summary>
+    <p>The default backend remains local for developer compatibility; Docker isolation is available by configuration and can be validated with <code>evolva sandbox smoke</code>, but CI still does not run against a live Docker daemon. Pattern-based redaction should continue to grow with project-specific secret detectors. Prometheus text export is available; push-based OpenTelemetry or hosted logging adapters remain deployment-specific. CI uses scoped mypy checks for the newly hardened primitives; full-repo typing remains a migration item.</p>
+  </details>
+</main>
+</body>
+</html>

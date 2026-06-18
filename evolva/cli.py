@@ -34,7 +34,12 @@ Commands:
   /trace list          List recent traces
   /trace show <run>    Show a trace
   /trace context <run> Show trace context/prompt events
+  /metrics             Show recent runtime metrics
+  /metrics alerts      Show recent alert events
+  /metrics prometheus  Export metrics in Prometheus text format
   /model [name]        Show or switch model for subsequent turns
+  /sandbox             Show sandbox backend info
+  /sandbox smoke       Run fixed sandbox backend smoke check
   /policy              Show guardrail policy
   /repo build          Build local repository index
   /repo search <query> Search symbols, references, and code chunks
@@ -140,6 +145,27 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
             print(agent.tracer.render_context(rest.removeprefix("context ").strip()))
         else:
             print("Usage: /trace list | /trace show <run_id> | /trace context <run_id>")
+        return True
+    if line.startswith("/metrics"):
+        rest = line.removeprefix("/metrics").strip()
+        if rest in {"", "list"}:
+            print(agent.observability.render_metrics())
+        elif rest in {"alerts", "alert"}:
+            print(agent.observability.render_alerts())
+        elif rest in {"prometheus", "export"}:
+            print(agent.observability.render_prometheus(), end="")
+        else:
+            print("Usage: /metrics | /metrics alerts | /metrics prometheus")
+        return True
+    if line.startswith("/sandbox"):
+        rest = line.removeprefix("/sandbox").strip()
+        if rest in {"", "info"}:
+            print(agent.sandbox.describe())
+        elif rest == "smoke":
+            result = agent.sandbox.smoke_check()
+            print(result.output)
+        else:
+            print("Usage: /sandbox | /sandbox smoke")
         return True
     if line.startswith("/model"):
         name = line.removeprefix("/model").strip()
@@ -421,6 +447,32 @@ def trace_cmd(args: argparse.Namespace) -> int:
     raise SystemExit("unknown trace command")
 
 
+def metrics_cmd(args: argparse.Namespace) -> int:
+    agent = EvolvaAgent(AgentConfig(), assume_yes=True)
+    if args.metrics_cmd == "list":
+        print(agent.observability.render_metrics(limit=args.limit))
+        return 0
+    if args.metrics_cmd == "alerts":
+        print(agent.observability.render_alerts(limit=args.limit))
+        return 0
+    if args.metrics_cmd == "prometheus":
+        print(agent.observability.render_prometheus(), end="")
+        return 0
+    raise SystemExit("unknown metrics command")
+
+
+def sandbox_cmd(args: argparse.Namespace) -> int:
+    agent = EvolvaAgent(AgentConfig(), assume_yes=True)
+    if args.sandbox_cmd == "info":
+        print(agent.sandbox.describe())
+        return 0
+    if args.sandbox_cmd == "smoke":
+        result = agent.sandbox.smoke_check(timeout=args.timeout)
+        print(result.output)
+        return 0 if result.ok else 1
+    raise SystemExit("unknown sandbox command")
+
+
 def eval_cmd(args: argparse.Namespace) -> int:
     harness = EvalHarness(AgentConfig(), assume_yes=args.yes)
     results = harness.run_file(args.tasks)
@@ -645,7 +697,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting in default TUI mode")
     parser.add_argument("--no-tools", action="store_true", help="Hide the TUI tool log panel at startup")
     parser.add_argument("--fullscreen", action="store_true", help="Use the legacy full-screen curses TUI")
-    sub = parser.add_subparsers(dest="cmd", required=False, metavar="{tui,ask,trace,eval,evolve,optimize,dream,loop,workflow,mcp}")
+    sub = parser.add_subparsers(dest="cmd", required=False, metavar="{tui,ask,trace,metrics,sandbox,eval,evolve,optimize,dream,loop,workflow,mcp}")
     tui_p = sub.add_parser("tui", help="Open the Evolva TUI workbench explicitly")
     tui_p.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting")
     tui_p.add_argument("--no-tools", action="store_true", help="Hide the tool log panel at startup")
@@ -673,6 +725,25 @@ def build_parser() -> argparse.ArgumentParser:
     trace_replay = trace_sub.add_parser("replay", help="Replay a trace user prompt")
     trace_replay.add_argument("run_id")
     trace_replay.set_defaults(func=trace_cmd)
+
+    metrics_p = sub.add_parser("metrics", help="Automation: inspect local runtime metrics and alerts")
+    metrics_sub = metrics_p.add_subparsers(dest="metrics_cmd", required=True)
+    metrics_list = metrics_sub.add_parser("list", help="List recent metrics")
+    metrics_list.add_argument("--limit", type=int, default=20)
+    metrics_list.set_defaults(func=metrics_cmd)
+    metrics_alerts = metrics_sub.add_parser("alerts", help="List recent alert events")
+    metrics_alerts.add_argument("--limit", type=int, default=20)
+    metrics_alerts.set_defaults(func=metrics_cmd)
+    metrics_prometheus = metrics_sub.add_parser("prometheus", help="Export metrics as Prometheus text")
+    metrics_prometheus.set_defaults(func=metrics_cmd)
+
+    sandbox_p = sub.add_parser("sandbox", help="Automation: inspect and smoke-test the configured sandbox backend")
+    sandbox_sub = sandbox_p.add_subparsers(dest="sandbox_cmd", required=True)
+    sandbox_info = sandbox_sub.add_parser("info", help="Show sandbox backend configuration")
+    sandbox_info.set_defaults(func=sandbox_cmd)
+    sandbox_smoke = sandbox_sub.add_parser("smoke", help="Run fixed smoke check through the configured sandbox backend")
+    sandbox_smoke.add_argument("--timeout", type=int, default=10)
+    sandbox_smoke.set_defaults(func=sandbox_cmd)
 
     eval_p = sub.add_parser("eval", help="Automation: run jsonl eval tasks")
     eval_p.add_argument("tasks", type=lambda s: __import__("pathlib").Path(s))

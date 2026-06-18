@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import select
 import subprocess
 import threading
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from evolva.storage import atomic_write_json, read_json
 
 
 @dataclass
@@ -17,6 +22,8 @@ class MCPServerConfig:
     env: dict[str, str] = field(default_factory=dict)
     cwd: str | None = None
     enabled: bool = True
+    request_timeout: int = 30
+    max_message_bytes: int = 2_000_000
 
 
 class MCPClient:
@@ -29,6 +36,8 @@ class MCPClient:
         self._next_id = 1
         self._lock = threading.Lock()
         self._initialized = False
+        self._stderr_lines: deque[str] = deque(maxlen=80)
+        self._stderr_thread: threading.Thread | None = None
 
     def start(self) -> None:
         if self.proc and self.proc.poll() is None:
@@ -44,6 +53,7 @@ class MCPClient:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+        self._start_stderr_reader()
 
     def close(self) -> None:
         if self.proc and self.proc.poll() is None:
@@ -92,10 +102,15 @@ class MCPClient:
             request_id = self._next_id
             self._next_id += 1
             self._write({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}})
-            while True:
-                message = self._read()
-                if message.get("id") == request_id:
-                    return message
+            deadline = time.monotonic() + max(1, int(self.config.request_timeout))
+            try:
+                while True:
+                    message = self._read(deadline)
+                    if message.get("id") == request_id:
+                        return message
+            except TimeoutError as exc:
+                self.close()
+                raise RuntimeError(f"MCP request timed out for {self.config.name}/{method} after {self.config.request_timeout}s") from exc
 
     def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
         with self._lock:
@@ -109,12 +124,11 @@ class MCPClient:
         self.proc.stdin.write(header + body)
         self.proc.stdin.flush()
 
-    def _read(self) -> dict[str, Any]:
+    def _read(self, deadline: float) -> dict[str, Any]:
         assert self.proc is not None and self.proc.stdout is not None
-        stdout = self.proc.stdout
         headers: dict[str, str] = {}
         while True:
-            line = stdout.readline()
+            line = self._read_line(deadline)
             if not line:
                 stderr = self._stderr_tail()
                 raise RuntimeError(f"MCP server {self.config.name} closed stdout. stderr={stderr}")
@@ -123,18 +137,65 @@ class MCPClient:
             key, _, value = line.decode("ascii", errors="replace").partition(":")
             headers[key.lower()] = value.strip()
         length = int(headers.get("content-length", "0"))
-        body = stdout.read(length)
+        if length > self.config.max_message_bytes:
+            self.close()
+            raise RuntimeError(f"MCP server {self.config.name} message too large: {length} bytes")
+        body = self._read_exact(length, deadline)
         if len(body) != length:
             raise RuntimeError(f"MCP server {self.config.name} returned incomplete message")
         return json.loads(body.decode("utf-8"))
 
     def _stderr_tail(self) -> str:
+        return "\n".join(self._stderr_lines)
+
+    def _read_line(self, deadline: float) -> bytes:
+        data = bytearray()
+        while True:
+            chunk = self._read_available(1, deadline)
+            if not chunk:
+                return bytes(data)
+            data.extend(chunk)
+            if chunk == b"\n":
+                return bytes(data)
+
+    def _read_exact(self, length: int, deadline: float) -> bytes:
+        data = bytearray()
+        while len(data) < length:
+            data.extend(self._read_available(length - len(data), deadline))
+        return bytes(data)
+
+    def _read_available(self, size: int, deadline: float) -> bytes:
+        assert self.proc is not None and self.proc.stdout is not None
+        fd = self.proc.stdout.fileno()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("MCP read timed out")
+        ready, _, _ = select.select([fd], [], [], remaining)
+        if not ready:
+            raise TimeoutError("MCP read timed out")
+        chunk = os.read(fd, size)
+        if not chunk:
+            stderr = self._stderr_tail()
+            raise RuntimeError(f"MCP server {self.config.name} closed stdout. stderr={stderr}")
+        return chunk
+
+    def _start_stderr_reader(self) -> None:
         if not self.proc or not self.proc.stderr:
-            return ""
-        try:
-            return self.proc.stderr.read(2000).decode("utf-8", errors="replace")
-        except Exception:
-            return ""
+            return
+
+        def pump() -> None:
+            assert self.proc is not None and self.proc.stderr is not None
+            try:
+                while True:
+                    line = self.proc.stderr.readline()
+                    if not line:
+                        break
+                    self._stderr_lines.append(line.decode("utf-8", errors="replace").rstrip())
+            except Exception:
+                return
+
+        self._stderr_thread = threading.Thread(target=pump, name=f"mcp-stderr-{self.config.name}", daemon=True)
+        self._stderr_thread.start()
 
 
 class MCPManager:
@@ -147,7 +208,7 @@ class MCPManager:
     def load_configs(self, path: Path) -> dict[str, MCPServerConfig]:
         if not path.exists():
             return {}
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path, {})
         raw_servers = data.get("servers", data if isinstance(data, dict) else {})
         servers: dict[str, MCPServerConfig] = {}
         for name, item in raw_servers.items():
@@ -160,6 +221,8 @@ class MCPManager:
                 env=dict(item.get("env", {})),
                 cwd=item.get("cwd"),
                 enabled=bool(item.get("enabled", True)),
+                request_timeout=int(item.get("request_timeout", 30)),
+                max_message_bytes=int(item.get("max_message_bytes", 2_000_000)),
             )
         return servers
 
@@ -175,6 +238,8 @@ class MCPManager:
         env: dict[str, str] | None = None,
         cwd: str | None = None,
         enabled: bool = True,
+        request_timeout: int = 30,
+        max_message_bytes: int = 2_000_000,
     ) -> MCPServerConfig:
         """Persist and activate a stdio MCP server configuration.
 
@@ -195,11 +260,22 @@ class MCPManager:
             "args": list(args or []),
             "env": dict(env or {}),
             "enabled": bool(enabled),
+            "request_timeout": int(request_timeout),
+            "max_message_bytes": int(max_message_bytes),
         }
         if cwd:
             servers[name]["cwd"] = cwd
         self._write_config(data)
-        config = MCPServerConfig(name=name, command=command, args=list(args or []), env=dict(env or {}), cwd=cwd, enabled=enabled)
+        config = MCPServerConfig(
+            name=name,
+            command=command,
+            args=list(args or []),
+            env=dict(env or {}),
+            cwd=cwd,
+            enabled=enabled,
+            request_timeout=int(request_timeout),
+            max_message_bytes=int(max_message_bytes),
+        )
         self.servers[name] = config
         if name in self.clients:
             self.clients[name].close()
@@ -248,14 +324,13 @@ class MCPManager:
     def _raw_config(self) -> dict[str, Any]:
         if not self.config_file.exists():
             return {"servers": {}}
-        data = json.loads(self.config_file.read_text(encoding="utf-8"))
+        data = read_json(self.config_file, {})
         if "servers" in data:
             return data
         return {"servers": data if isinstance(data, dict) else {}}
 
     def _write_config(self, data: dict[str, Any]) -> None:
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        self.config_file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(self.config_file, data)
 
 
 def render_mcp_result(result: dict[str, Any]) -> str:

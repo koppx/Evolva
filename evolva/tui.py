@@ -885,7 +885,7 @@ class EvolvaTUI:
         model = self._model_label()
         provider = self._provider_label()
         cwd = self._path_label(max(12, w - text_x - 2))
-        title = f"E V O L A  Agent Workbench"
+        title = "E V O L A  Agent Workbench"
         subtitle = f"v{version} · " + (f"{provider}_{model}" if provider != "local rule-mode" else "local_rule-mode")
         for idx, row in enumerate(icon):
             self.stdscr.addnstr(y + idx, brand_x, row[: max(1, w - brand_x - 1)], max(1, w - brand_x - 1), self._color(8, curses.A_BOLD))
