@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A TUI-first local self-evolving agent harness with tools, memory, skills, MCP, workflow, trace, eval, and guardrails."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["langgraph>=1.2.4", "textual>=0.89.0"]
+dependencies = ["langgraph>=1.2.4", "textual>=0.89.0", "windows-curses>=2.3; sys_platform == 'win32'"]
 
 [tool.setuptools.packages.find]
 include = ["evolva*"]
