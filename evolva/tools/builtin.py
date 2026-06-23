@@ -11,6 +11,7 @@ from evolva.agent.capabilities import DEFAULT_TOOL_CAPABILITIES
 from evolva.agent.context import ContextStore
 from evolva.agent.memory import MemoryStore
 from evolva.agent.mcp import MCPManager, render_mcp_result
+from evolva.agent.mcp_presets import get_mcp_preset, list_mcp_presets
 from evolva.agent.multi_agent import MultiAgentCoordinator
 from evolva.agent.policy import PolicyEngine
 from evolva.agent.repo_index import RepoIndex
@@ -18,6 +19,7 @@ from evolva.agent.sandbox import Sandbox
 from evolva.agent.skills import SkillStore
 from evolva.agent.todo import TodoStore
 from evolva.tools.base import Tool, ToolRegistry, ToolResult
+from evolva.tools import benchmark as benchmark_tools
 
 
 def build_registry(
@@ -94,23 +96,116 @@ def build_registry(
         return result
 
     def web_search(query: str, max_results: int = 5) -> ToolResult:
-        url = "https://duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query})
-        req = urllib.request.Request(url, headers={"User-Agent": "evolva/0.1"})
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                html = resp.read().decode("utf-8", errors="replace")
-        except Exception as exc:
-            return ToolResult(False, f"Search failed: {exc}")
-        import re
+        result = benchmark_tools.web_search_pro(query, provider="auto", max_results=max_results)
+        context.add("artifact", f"Web search: {query} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {})
+        return result
 
-        matches = re.findall(r'<a rel="nofollow" class="result__a" href="([^"]+)">(.*?)</a>', html)
-        rows = []
-        for href, title in matches[:max_results]:
-            title = re.sub("<.*?>", "", title)
-            title = title.replace("&amp;", "&")
-            rows.append({"title": title, "url": href})
-        context.add("artifact", f"Web search: {query}", meta={"results": rows[:max_results]})
-        return ToolResult(True, json.dumps(rows, ensure_ascii=False, indent=2), rows)
+    def web_search_pro(query: str, provider: str = "auto", max_results: int = 5, timeout: int = 15) -> ToolResult:
+        result = benchmark_tools.web_search_pro(query, provider=provider, max_results=max_results, timeout=timeout)
+        context.add("artifact", f"Web search provider={provider}: {query} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {})
+        return result
+
+    def web_fetch(url: str, max_chars: int = 20000, timeout: int = 20) -> ToolResult:
+        result = benchmark_tools.web_fetch(url, max_chars=max_chars, timeout=timeout)
+        context.add("artifact", f"Web fetch: {url} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {"url": url})
+        return result
+
+    def file_to_text(path: str, max_chars: int = 20000, max_rows: int = 20) -> ToolResult:
+        try:
+            p = sandbox.resolve(path)
+        except ValueError as exc:
+            return ToolResult(False, str(exc), {"path": path})
+        result = benchmark_tools.file_to_text(p, max_chars=max_chars, max_rows=max_rows)
+        context.add("artifact", f"File preview: {p} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {"path": str(p)})
+        return result
+
+    def spreadsheet_describe(path: str, max_rows: int = 20, max_chars: int = 20000) -> ToolResult:
+        try:
+            p = sandbox.resolve(path)
+        except ValueError as exc:
+            return ToolResult(False, str(exc), {"path": path})
+        result = benchmark_tools.spreadsheet_describe(p, max_rows=max_rows, max_chars=max_chars)
+        context.add("artifact", f"Spreadsheet preview: {p} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {"path": str(p)})
+        return result
+
+    def normalize_answer(answer: str) -> ToolResult:
+        normalized = benchmark_tools.normalize_answer(answer)
+        return ToolResult(True, normalized, {"answer": answer, "normalized": normalized})
+
+    def benchmark_task_context(metadata_csv: str, attachments_dir: str, task_id: str = "", limit: int = 5, max_chars: int = 12000) -> ToolResult:
+        try:
+            metadata_path = sandbox.resolve(metadata_csv)
+            attachments_path = sandbox.resolve(attachments_dir)
+        except ValueError as exc:
+            return ToolResult(False, str(exc), {"metadata_csv": metadata_csv, "attachments_dir": attachments_dir})
+        return benchmark_tools.benchmark_task_context(metadata_path, attachments_path, task_id=task_id, limit=limit, max_chars=max_chars)
+
+    def benchmark_smoke_check(metadata_csv: str, attachments_dir: str, limit: int = 20, max_chars: int = 4000) -> ToolResult:
+        try:
+            metadata_path = sandbox.resolve(metadata_csv)
+            attachments_path = sandbox.resolve(attachments_dir)
+        except ValueError as exc:
+            return ToolResult(False, str(exc), {"metadata_csv": metadata_csv, "attachments_dir": attachments_dir})
+        from evolva.eval.benchmark import benchmark_smoke_report, render_benchmark_smoke_report
+
+        report = benchmark_smoke_report(metadata_path, attachments_path, limit=limit, max_chars=max_chars)
+        return ToolResult(True, render_benchmark_smoke_report(report), report.to_dict())
+
+    def benchmark_tool_health() -> ToolResult:
+        result = benchmark_tools.benchmark_tool_health(mcp.config_file if mcp is not None else None)
+        context.add("artifact", "Benchmark optional tool health checked", meta=result.data if isinstance(result.data, dict) else {})
+        return result
+
+    def ocr_image(path: str, language: str = "eng", max_chars: int = 20000, timeout: int = 60) -> ToolResult:
+        try:
+            p = sandbox.resolve(path)
+        except ValueError as exc:
+            return ToolResult(False, str(exc), {"path": path})
+        result = benchmark_tools.ocr_image(p, language=language, max_chars=max_chars, timeout=timeout)
+        context.add("artifact", f"OCR image: {p} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {"path": str(p)})
+        return result
+
+    def audio_transcribe(path: str, model: str = "base", language: str = "", max_chars: int = 20000, timeout: int = 600) -> ToolResult:
+        try:
+            p = sandbox.resolve(path)
+        except ValueError as exc:
+            return ToolResult(False, str(exc), {"path": path})
+        result = benchmark_tools.audio_transcribe(p, model=model, language=language, max_chars=max_chars, timeout=timeout)
+        context.add("artifact", f"Audio/video transcription: {p} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {"path": str(p)})
+        return result
+
+    def video_probe(path: str, timeout: int = 30) -> ToolResult:
+        try:
+            p = sandbox.resolve(path)
+        except ValueError as exc:
+            return ToolResult(False, str(exc), {"path": path})
+        result = benchmark_tools.video_probe(p, timeout=timeout)
+        context.add("artifact", f"Video probe: {p} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {"path": str(p)})
+        return result
+
+    def video_extract_frames(path: str, output_dir: str, every_seconds: float = 10.0, max_frames: int = 12, timeout: int = 120) -> ToolResult:
+        try:
+            p = sandbox.resolve(path)
+            out = sandbox.resolve_write(output_dir)
+        except ValueError as exc:
+            return ToolResult(False, str(exc), {"path": path, "output_dir": output_dir})
+        result = benchmark_tools.video_extract_frames(p, out, every_seconds=every_seconds, max_frames=max_frames, timeout=timeout)
+        context.add("artifact", f"Video frame extraction: {p} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {"path": str(p), "output_dir": str(out)})
+        return result
+
+    def pdf_extract(path: str, max_chars: int = 20000, timeout: int = 60) -> ToolResult:
+        try:
+            p = sandbox.resolve(path)
+        except ValueError as exc:
+            return ToolResult(False, str(exc), {"path": path})
+        result = benchmark_tools.pdf_extract_external(p, max_chars=max_chars, timeout=timeout)
+        context.add("artifact", f"PDF extraction: {p} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {"path": str(p)})
+        return result
+
+    def yt_dlp_info(url: str, max_chars: int = 30000, timeout: int = 120) -> ToolResult:
+        result = benchmark_tools.yt_dlp_info(url, max_chars=max_chars, timeout=timeout)
+        context.add("artifact", f"yt-dlp info: {url} ok={result.ok}", meta=result.data if isinstance(result.data, dict) else {"url": url})
+        return result
 
     def remember(kind: str, content: str, confidence: float = 0.7, status: str = "active", evidence: list[str] | None = None) -> ToolResult:
         item = memory.add(kind, content, confidence=confidence, source="agent", status=status, evidence=list(evidence or []))
@@ -241,6 +336,11 @@ def build_registry(
         names = mcp.list_servers()
         return ToolResult(True, "\n".join(names) or "No MCP servers configured", names)
 
+    def mcp_presets() -> ToolResult:
+        rows = list_mcp_presets()
+        lines = [f"- {item['name']}: {item['description']} ({item['command']} {' '.join(item['args'])})" for item in rows]
+        return ToolResult(True, "\n".join(lines), rows)
+
     def mcp_add_server(
         name: str,
         command: str,
@@ -267,6 +367,28 @@ def build_registry(
                 "max_message_bytes": config.max_message_bytes,
             },
         )
+
+    def mcp_add_preset(preset: str, name: str = "", env: dict | None = None) -> ToolResult:
+        if mcp is None:
+            return ToolResult(False, "MCP manager is not configured")
+        try:
+            recipe = get_mcp_preset(preset)
+        except KeyError as exc:
+            return ToolResult(False, str(exc))
+        cfg = recipe.to_server_config(env_overrides={str(k): str(v) for k, v in dict(env or {}).items()}, name=name or recipe.name)
+        config = mcp.add_server(
+            cfg["name"],
+            cfg["command"],
+            cfg["args"],
+            env=cfg["env"],
+            request_timeout=cfg["request_timeout"],
+            max_message_bytes=cfg["max_message_bytes"],
+        )
+        output = f"Added MCP preset `{recipe.name}` as `{config.name}`: {config.command} {' '.join(config.args)}".strip()
+        if recipe.install_hint:
+            output += f"\nHint: {recipe.install_hint}"
+        context.add("artifact", output, meta={"server": config.name, "preset": recipe.name, "config_file": str(mcp.config_file)})
+        return ToolResult(True, output, {"name": config.name, "preset": recipe.name, "command": config.command, "args": config.args, "config_file": str(mcp.config_file), "env_keys": sorted(config.env)})
 
     def mcp_remove_server(name: str) -> ToolResult:
         if mcp is None:
@@ -335,7 +457,21 @@ def build_registry(
     reg.register(Tool("write_file", "Write or append a UTF-8 text file under the sandbox root", {"path": "str", "content": "str", "append": "bool"}, write_file, capabilities=caps("write_file")))
     reg.register(Tool("shell", "Run a shell command inside the sandbox", {"command": "str", "cwd": "str", "timeout": "int"}, shell, needs_confirmation=True, capabilities=caps("shell")))
     reg.register(Tool("python_exec", "Run a short Python snippet in a sandboxed subprocess", {"code": "str", "timeout": "int"}, python_exec, needs_confirmation=True, capabilities=caps("python_exec")))
-    reg.register(Tool("web_search", "Search the web with DuckDuckGo HTML endpoint", {"query": "str", "max_results": "int"}, web_search, capabilities=caps("web_search")))
+    reg.register(Tool("web_search", "Search the web with configured APIs and DuckDuckGo HTML fallback", {"query": "str", "max_results": "int"}, web_search, capabilities=caps("web_search")))
+    reg.register(Tool("web_search_pro", "Search the web using provider=auto|tavily|brave|serpapi|duckduckgo", {"query": "str", "provider": "str", "max_results": "int", "timeout": "int"}, web_search_pro, capabilities=caps("web_search_pro")))
+    reg.register(Tool("web_fetch", "Fetch a static HTTP(S) page and return plain text when possible", {"url": "str", "max_chars": "int", "timeout": "int"}, web_fetch, capabilities=caps("web_fetch")))
+    reg.register(Tool("file_to_text", "Preview local text from benchmark-style attachments: text, CSV, DOCX, PPTX, XLSX, PDF best-effort, zip, image/media metadata", {"path": "str", "max_chars": "int", "max_rows": "int"}, file_to_text, capabilities=caps("file_to_text")))
+    reg.register(Tool("spreadsheet_describe", "Preview spreadsheet/table files including CSV, TSV, XLSX and optional parquet", {"path": "str", "max_rows": "int", "max_chars": "int"}, spreadsheet_describe, capabilities=caps("spreadsheet_describe")))
+    reg.register(Tool("normalize_answer", "Normalize a benchmark final answer for lightweight exact matching", {"answer": "str"}, normalize_answer, capabilities=caps("normalize_answer")))
+    reg.register(Tool("benchmark_task_context", "Build benchmark task context with resolved local attachment preview", {"metadata_csv": "str", "attachments_dir": "str", "task_id": "str", "limit": "int", "max_chars": "int"}, benchmark_task_context, capabilities=caps("benchmark_task_context")))
+    reg.register(Tool("benchmark_smoke_check", "Check whether a benchmark metadata CSV and attachment directory are readable and previewable", {"metadata_csv": "str", "attachments_dir": "str", "limit": "int", "max_chars": "int"}, benchmark_smoke_check, capabilities=caps("benchmark_smoke_check")))
+    reg.register(Tool("benchmark_tool_health", "Report optional OCR/PDF/audio/video/web tooling available for higher benchmark coverage", {}, benchmark_tool_health, capabilities=caps("benchmark_tool_health")))
+    reg.register(Tool("ocr_image", "OCR a local image with optional pytesseract/Pillow or tesseract CLI", {"path": "str", "language": "str", "max_chars": "int", "timeout": "int"}, ocr_image, needs_confirmation=True, capabilities=caps("ocr_image")))
+    reg.register(Tool("audio_transcribe", "Transcribe local audio/video with an installed Whisper CLI", {"path": "str", "model": "str", "language": "str", "max_chars": "int", "timeout": "int"}, audio_transcribe, needs_confirmation=True, capabilities=caps("audio_transcribe")))
+    reg.register(Tool("video_probe", "Inspect local video/audio metadata with ffprobe", {"path": "str", "timeout": "int"}, video_probe, needs_confirmation=True, capabilities=caps("video_probe")))
+    reg.register(Tool("video_extract_frames", "Extract bounded video frames with ffmpeg into a sandbox-writable output directory", {"path": "str", "output_dir": "str", "every_seconds": "float", "max_frames": "int", "timeout": "int"}, video_extract_frames, needs_confirmation=True, capabilities=caps("video_extract_frames")))
+    reg.register(Tool("pdf_extract", "Extract PDF text with optional pypdf/PyPDF2 or pdftotext", {"path": "str", "max_chars": "int", "timeout": "int"}, pdf_extract, needs_confirmation=True, capabilities=caps("pdf_extract")))
+    reg.register(Tool("yt_dlp_info", "Fetch media metadata/transcript availability through yt-dlp", {"url": "str", "max_chars": "int", "timeout": "int"}, yt_dlp_info, needs_confirmation=True, capabilities=caps("yt_dlp_info")))
     reg.register(Tool("remember", "Store a governed long-term memory item", {"kind": "str", "content": "str", "confidence": "float", "status": "str", "evidence": "list[str]"}, remember, capabilities=caps("remember")))
     reg.register(Tool("recall", "Search long-term memory", {"query": "str"}, recall, capabilities=caps("recall")))
     reg.register(Tool("memory_status", "Update a memory item's governance status", {"item_id": "str", "status": "str", "reason": "str"}, memory_status, capabilities=caps("memory_status")))
@@ -358,6 +494,8 @@ def build_registry(
     reg.register(Tool("repo_index_search", "Search repository symbols, references, paths, and code chunks", {"query": "str", "limit": "int"}, repo_index_search, capabilities=caps("repo_index_search")))
     reg.register(Tool("repo_index_status", "Show repository index freshness, manifest, and skipped-file diagnostics", {"max_files": "int"}, repo_index_status, capabilities=caps("repo_index_status")))
     reg.register(Tool("mcp_servers", "List configured MCP servers", {}, mcp_servers, capabilities=caps("mcp_servers")))
+    reg.register(Tool("mcp_presets", "List built-in browser/search/fetch MCP presets", {}, mcp_presets, capabilities=caps("mcp_presets")))
+    reg.register(Tool("mcp_add_preset", "Persist a built-in browser/search/fetch MCP preset", {"preset": "str", "name": "str", "env": "dict"}, mcp_add_preset, capabilities=caps("mcp_add_preset")))
     reg.register(Tool("mcp_add_server", "Persist a stdio MCP server config", {"name": "str", "command": "str", "args": "list[str]", "env": "dict", "cwd": "str", "request_timeout": "int", "max_message_bytes": "int"}, mcp_add_server, capabilities=caps("mcp_add_server")))
     reg.register(Tool("mcp_remove_server", "Remove a configured MCP server", {"name": "str"}, mcp_remove_server, capabilities=caps("mcp_remove_server")))
     reg.register(Tool("mcp_health", "Check MCP server health, latency, tool count, and schema cache status", {"server": "str", "refresh": "bool"}, mcp_health, capabilities=caps("mcp_health")))

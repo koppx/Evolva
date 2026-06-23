@@ -13,6 +13,7 @@ import pytest
 from evolva.agent.core import EvolvaAgent, SYSTEM_PROMPT
 from evolva.agent.llm import LLMResponse
 from evolva.agent.mcp import MCPClient, MCPManager, MCPServerConfig, render_mcp_result
+from evolva.agent.mcp_presets import get_mcp_preset, list_mcp_presets, parse_env_pairs
 from evolva.agent.tracing import TraceRecorder
 from evolva.cli import build_parser, dream_cmd, evolve_cmd, handle_command, loop_cmd, main, mcp_cmd, metrics_cmd, once, optimize_cmd, sandbox_cmd
 from evolva.eval.harness import EvalHarness, EvalResult, render_gate, render_results
@@ -607,6 +608,10 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     assert parsed_eval.no_regression and parsed_eval.min_score == 1.0
     parsed_mcp_add = parser.parse_args(["mcp", "add", "fs", "npx", "-y", "server", "."])
     assert parsed_mcp_add.mcp_cmd == "add" and parsed_mcp_add.args == ["-y", "server", "."]
+    parsed_mcp_add_env = parser.parse_args(["mcp", "add", "search", "npx", "--env", "BRAVE_API_KEY=x", "server"])
+    assert parsed_mcp_add_env.args == ["--env", "BRAVE_API_KEY=x", "server"]
+    parsed_preset = parser.parse_args(["mcp", "add-preset", "playwright", "--name", "browser", "--yes"])
+    assert parsed_preset.mcp_cmd == "add-preset" and parsed_preset.name == "browser"
     assert parser.parse_args(["evolve", "trace", "--apply"]).evolve_cmd == "trace"
     assert parser.parse_args(["optimize", "--apply"]).apply
     assert parser.parse_args(["dream", "--apply", "--limit", "3"]).apply
@@ -673,9 +678,13 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
 
 def test_cli_mcp_cmd_json_error_and_success(monkeypatch, capsys, temp_config):
     monkeypatch.setattr("evolva.cli.AgentConfig", lambda: temp_config)
+    assert mcp_cmd(Namespace(mcp_cmd="presets", yes=True)) == 0
+    assert "playwright" in capsys.readouterr().out
+    assert mcp_cmd(Namespace(mcp_cmd="add-preset", preset="playwright", name="browser", env=[], yes=True)) == 0
+    assert "Added MCP preset" in capsys.readouterr().out
     assert mcp_cmd(Namespace(mcp_cmd="servers", yes=True)) == 0
-    assert "No MCP servers" in capsys.readouterr().out
-    assert mcp_cmd(Namespace(mcp_cmd="add", name="fs", command="python3", args=["server.py"], yes=True)) == 0
+    assert "browser" in capsys.readouterr().out
+    assert mcp_cmd(Namespace(mcp_cmd="add", name="fs", command="python3", args=["server.py"], env=["A=B"], yes=True)) == 0
     assert "Added MCP server" in capsys.readouterr().out
     assert mcp_cmd(Namespace(mcp_cmd="remove", name="fs", yes=True)) == 0
     assert "Removed MCP server" in capsys.readouterr().out
@@ -712,6 +721,18 @@ def test_mcp_manager_add_remove_persists_config(tmp_path):
     assert manager.list_servers() == []
     assert json.loads(cfg.read_text())["servers"] == {}
     assert manager.remove_server("filesystem") is False
+
+
+def test_mcp_presets_and_env_parser():
+    presets = list_mcp_presets()
+    assert {item["name"] for item in presets} >= {"playwright", "brave-search", "fetch"}
+    playwright = get_mcp_preset("playwright").to_server_config(name="browser")
+    assert playwright["name"] == "browser"
+    assert playwright["command"] == "npx"
+    assert "playwright" in " ".join(playwright["args"])
+    assert parse_env_pairs(["BRAVE_API_KEY=secret"]) == {"BRAVE_API_KEY": "secret"}
+    with pytest.raises(ValueError):
+        parse_env_pairs(["BROKEN"])
 
 
 def test_cli_evolve_cmd_status_trace_eval_and_feedback(monkeypatch, capsys, temp_config, tmp_path):

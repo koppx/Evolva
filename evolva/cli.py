@@ -10,6 +10,9 @@ from evolva.agent.core import EvolvaAgent
 from evolva.agent.dream import DreamEngine
 from evolva.agent.evolution_analyzer import EvalEvolutionAnalyzer, TraceEvolutionAnalyzer, apply_proposals, render_analysis, render_reports
 from evolva.config import AgentConfig
+from evolva.eval.benchmark import benchmark_smoke_report, render_benchmark_smoke_report, run_benchmark_sample, write_benchmark_report
+from evolva.tools import benchmark as benchmark_tools
+from evolva.agent.mcp_presets import parse_env_pairs
 from evolva.eval.harness import EvalHarness, render_gate, render_results
 from evolva.loops import LoopDraftSession, LoopRunner, render_confirmed_draft, render_loop_draft, render_loop_result, render_loop_specs, render_loop_validation, validate_loop_spec
 from evolva.loops.planner import is_natural_language_loop
@@ -502,6 +505,83 @@ def eval_cmd(args: argparse.Namespace) -> int:
     return 0 if gate.ok else 1
 
 
+def benchmark_cmd(args: argparse.Namespace) -> int:
+    config = AgentConfig()
+    if args.benchmark_cmd == "health":
+        result = benchmark_tools.benchmark_tool_health(config.mcp_config_file)
+        if args.json:
+            print(json.dumps(result.data, ensure_ascii=False, indent=2))
+        else:
+            print(result.output)
+        return 0 if result.ok else 1
+    if args.benchmark_cmd == "inspect-file":
+        path = args.path
+        result = benchmark_tools.file_to_text(path, max_chars=args.max_chars, max_rows=args.max_rows)
+        extra: dict[str, Any] = {"preview": result.data}
+        if args.deep:
+            suffix = path.suffix.lower()
+            if suffix in benchmark_tools.IMAGE_EXTENSIONS:
+                ocr = benchmark_tools.ocr_image(path, language=args.language, max_chars=args.max_chars, timeout=args.timeout)
+                extra["ocr"] = ocr.data
+            elif suffix in benchmark_tools.AUDIO_EXTENSIONS:
+                transcript = benchmark_tools.audio_transcribe(path, model=args.model, language=args.language if args.language != "eng" else "", max_chars=args.max_chars, timeout=args.timeout)
+                extra["transcript"] = transcript.data
+            elif suffix in benchmark_tools.VIDEO_EXTENSIONS:
+                probe = benchmark_tools.video_probe(path, timeout=min(args.timeout, 120))
+                extra["probe"] = probe.data
+                if args.frames_dir:
+                    frames = benchmark_tools.video_extract_frames(path, args.frames_dir, every_seconds=args.every_seconds, max_frames=args.max_frames, timeout=args.timeout)
+                    extra["frames"] = frames.data
+            elif suffix == ".pdf":
+                pdf = benchmark_tools.pdf_extract_external(path, max_chars=args.max_chars, timeout=args.timeout)
+                extra["pdf"] = pdf.data
+        if args.json:
+            print(json.dumps(extra, ensure_ascii=False, indent=2))
+        else:
+            print(result.output)
+            for key in ["ocr", "transcript", "probe", "frames", "pdf"]:
+                if key in extra and isinstance(extra[key], dict):
+                    text = extra[key].get("text") or extra[key].get("summary") or extra[key].get("error") or ""
+                    if text:
+                        print(f"\n--- {key} ---\n{text}")
+        return 0 if result.ok else 1
+    if args.benchmark_cmd == "smoke":
+        report = benchmark_smoke_report(args.metadata, args.attachments, limit=args.limit, max_chars=args.max_chars)
+        if args.json:
+            print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(render_benchmark_smoke_report(report))
+        if args.output:
+            path = write_benchmark_report(report, args.output)
+            print(f"Report: {path}")
+        return 1 if args.strict and (report.missing_attachments or report.preview_failed) else 0
+    if args.benchmark_cmd == "run":
+        rows = run_benchmark_sample(
+            config,
+            args.metadata,
+            args.attachments,
+            limit=args.limit,
+            level=args.level,
+            run_agent=args.run_agent,
+            include_answers=args.include_answers,
+            max_attachment_chars=args.max_attachment_chars,
+            assume_yes=args.yes,
+        )
+        if args.json:
+            print(json.dumps(rows, ensure_ascii=False, indent=2))
+        else:
+            for item in rows:
+                print(f"\n--- benchmark {item.get('task_id')} level={item.get('level')} ---")
+                if args.run_agent:
+                    print(item.get("answer", ""))
+                    if item.get("exact_match") is not None:
+                        print(f"exact_match={item.get('exact_match')}")
+                else:
+                    print(item.get("prompt", ""))
+        return 0
+    raise SystemExit("unknown benchmark command")
+
+
 def workflow_cmd(args: argparse.Namespace) -> int:
     agent = EvolvaAgent(AgentConfig(), assume_yes=args.yes)
     result = WorkflowEngine(agent).run_file(args.spec)
@@ -515,8 +595,36 @@ def mcp_cmd(args: argparse.Namespace) -> int:
     if args.mcp_cmd == "servers":
         print(agent._call_tool("mcp_servers", {}).output)
         return 0
+    if args.mcp_cmd == "presets":
+        print(agent._call_tool("mcp_presets", {}).output)
+        return 0
+    if args.mcp_cmd == "add-preset":
+        try:
+            env = parse_env_pairs(args.env)
+        except ValueError as exc:
+            print(str(exc))
+            return 2
+        result = agent._call_tool("mcp_add_preset", {"preset": args.preset, "name": args.name or "", "env": env})
+        print(result.output)
+        return 0 if result.ok else 1
     if args.mcp_cmd == "add":
-        result = agent._call_tool("mcp_add_server", {"name": args.name, "command": args.command, "args": args.args})
+        try:
+            raw_args = list(args.args or [])
+            raw_env = list(getattr(args, "env", []) or [])
+            cleaned_args: list[str] = []
+            i = 0
+            while i < len(raw_args):
+                if raw_args[i] == "--env" and i + 1 < len(raw_args):
+                    raw_env.append(raw_args[i + 1])
+                    i += 2
+                    continue
+                cleaned_args.append(raw_args[i])
+                i += 1
+            env = parse_env_pairs(raw_env)
+        except ValueError as exc:
+            print(str(exc))
+            return 2
+        result = agent._call_tool("mcp_add_server", {"name": args.name, "command": args.command, "args": cleaned_args, "env": env})
         print(result.output)
         return 0 if result.ok else 1
     if args.mcp_cmd == "remove":
@@ -713,7 +821,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting in default TUI mode")
     parser.add_argument("--no-tools", action="store_true", help="Hide the TUI tool log panel at startup")
     parser.add_argument("--fullscreen", action="store_true", help="Use the legacy full-screen curses TUI")
-    sub = parser.add_subparsers(dest="cmd", required=False, metavar="{tui,ask,trace,metrics,sandbox,eval,evolve,optimize,dream,loop,workflow,mcp}")
+    sub = parser.add_subparsers(dest="cmd", required=False, metavar="{tui,ask,trace,metrics,sandbox,eval,benchmark,evolve,optimize,dream,loop,workflow,mcp}")
     tui_p = sub.add_parser("tui", help="Open the Evolva TUI workbench explicitly")
     tui_p.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting")
     tui_p.add_argument("--no-tools", action="store_true", help="Hide the tool log panel at startup")
@@ -768,6 +876,45 @@ def build_parser() -> argparse.ArgumentParser:
     eval_p.add_argument("--min-score", type=float, help="Require the average eval score to be at least this value")
     eval_p.add_argument("--no-regression", action="store_true", help="Fail if any baseline task regresses")
     eval_p.set_defaults(func=eval_cmd)
+
+    benchmark_p = sub.add_parser("benchmark", help="Automation: inspect and dry-run benchmark tasks")
+    benchmark_sub = benchmark_p.add_subparsers(dest="benchmark_cmd", required=True)
+    benchmark_health = benchmark_sub.add_parser("health", help="Report optional OCR/PDF/audio/video/web tools for stronger benchmark coverage")
+    benchmark_health.add_argument("--json", action="store_true", help="Print JSON health report")
+    benchmark_health.set_defaults(func=benchmark_cmd)
+    benchmark_inspect = benchmark_sub.add_parser("inspect-file", help="Preview one benchmark-style attachment and optionally run deeper media/OCR/PDF tools")
+    benchmark_inspect.add_argument("path", type=lambda s: __import__("pathlib").Path(s), help="Attachment path to inspect")
+    benchmark_inspect.add_argument("--max-chars", type=int, default=20000, help="Text output budget")
+    benchmark_inspect.add_argument("--max-rows", type=int, default=20, help="Table row preview budget")
+    benchmark_inspect.add_argument("--deep", action="store_true", help="Run optional OCR/transcription/probe/PDF extraction when supported")
+    benchmark_inspect.add_argument("--language", default="eng", help="OCR/Whisper language hint")
+    benchmark_inspect.add_argument("--model", default="base", help="Whisper model name for --deep audio transcription")
+    benchmark_inspect.add_argument("--timeout", type=int, default=120, help="External tool timeout in seconds")
+    benchmark_inspect.add_argument("--frames-dir", type=lambda s: __import__("pathlib").Path(s), help="Directory for --deep video frame extraction")
+    benchmark_inspect.add_argument("--every-seconds", type=float, default=10.0, help="Video frame interval for --frames-dir")
+    benchmark_inspect.add_argument("--max-frames", type=int, default=12, help="Maximum video frames to extract")
+    benchmark_inspect.add_argument("--json", action="store_true", help="Print JSON inspection report")
+    benchmark_inspect.set_defaults(func=benchmark_cmd)
+    benchmark_smoke = benchmark_sub.add_parser("smoke", help="Read benchmark metadata/attachments and report local readiness")
+    benchmark_smoke.add_argument("--metadata", required=True, type=lambda s: __import__("pathlib").Path(s), help="benchmark metadata.csv path")
+    benchmark_smoke.add_argument("--attachments", required=True, type=lambda s: __import__("pathlib").Path(s), help="benchmark attachment directory")
+    benchmark_smoke.add_argument("--limit", type=int, default=0, help="Number of rows to inspect; 0 means all rows")
+    benchmark_smoke.add_argument("--max-chars", type=int, default=4000, help="Attachment preview character budget per file")
+    benchmark_smoke.add_argument("--json", action="store_true", help="Print JSON report")
+    benchmark_smoke.add_argument("--strict", action="store_true", help="Exit non-zero if attachments are missing or previews fail")
+    benchmark_smoke.add_argument("--output", type=lambda s: __import__("pathlib").Path(s), help="Directory to write benchmark_smoke_*.json")
+    benchmark_smoke.set_defaults(func=benchmark_cmd)
+    benchmark_run = benchmark_sub.add_parser("run", help="Build benchmark prompts, or run a small sample through the agent with --run-agent")
+    benchmark_run.add_argument("--metadata", required=True, type=lambda s: __import__("pathlib").Path(s), help="benchmark metadata.csv path")
+    benchmark_run.add_argument("--attachments", required=True, type=lambda s: __import__("pathlib").Path(s), help="benchmark attachment directory")
+    benchmark_run.add_argument("--limit", type=int, default=1, help="Number of tasks to prepare/run")
+    benchmark_run.add_argument("--level", help="Optional benchmark level filter, e.g. 1, 2, 3")
+    benchmark_run.add_argument("--run-agent", action="store_true", help="Actually call EvolvaAgent; otherwise only print prompts")
+    benchmark_run.add_argument("--include-answers", action="store_true", help="Include reference answers and exact-match fields for local evaluation")
+    benchmark_run.add_argument("--max-attachment-chars", type=int, default=8000, help="Attachment text budget in prompts")
+    benchmark_run.add_argument("--json", action="store_true", help="Print JSON rows")
+    benchmark_run.add_argument("--yes", action="store_true", help="Approve tools during --run-agent")
+    benchmark_run.set_defaults(func=benchmark_cmd)
 
     evolve_p = sub.add_parser("evolve", help="Automation: inspect or apply self-evolution proposals")
     evolve_sub = evolve_p.add_subparsers(dest="evolve_cmd", required=True)
@@ -875,9 +1022,19 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_add_p = mcp_sub.add_parser("add", help="Persist a stdio MCP server config")
     mcp_add_p.add_argument("name")
     mcp_add_p.add_argument("command")
-    mcp_add_p.add_argument("args", nargs=argparse.REMAINDER)
+    mcp_add_p.add_argument("--env", action="append", default=[], help="Environment variable for the server, KEY=VALUE; may repeat")
     mcp_add_p.add_argument("--yes", action="store_true")
+    mcp_add_p.add_argument("args", nargs=argparse.REMAINDER)
     mcp_add_p.set_defaults(func=mcp_cmd)
+    mcp_presets_p = mcp_sub.add_parser("presets", help="List built-in browser/search/fetch MCP presets")
+    mcp_presets_p.add_argument("--yes", action="store_true")
+    mcp_presets_p.set_defaults(func=mcp_cmd)
+    mcp_add_preset_p = mcp_sub.add_parser("add-preset", help="Persist a built-in MCP preset such as playwright or brave-search")
+    mcp_add_preset_p.add_argument("preset")
+    mcp_add_preset_p.add_argument("--name", default="", help="Optional server name; defaults to the preset name")
+    mcp_add_preset_p.add_argument("--env", action="append", default=[], help="Environment variable for the server, KEY=VALUE; may repeat")
+    mcp_add_preset_p.add_argument("--yes", action="store_true")
+    mcp_add_preset_p.set_defaults(func=mcp_cmd)
     mcp_remove_p = mcp_sub.add_parser("remove", help="Remove a configured MCP server")
     mcp_remove_p.add_argument("name")
     mcp_remove_p.add_argument("--yes", action="store_true")

@@ -533,3 +533,73 @@ assets/
   <strong>Evolva</strong> · Local-first, inspectable, self-evolving Agent Harness.<br />
   如果你也在构建可评测、可回放、可进化的 Agent 系统，欢迎 Star：<strong>koppx/Evolva</strong>
 </p>
+
+## Benchmark readiness
+
+Evolva includes a generic local readiness path for inspecting benchmark-style metadata CSV files and attachment folders before doing a full benchmark run.
+
+```bash
+# Check optional OCR/PDF/audio/video/web helper availability
+uv run evolva benchmark health
+
+# Check metadata, attachment resolution, preview coverage, and capability blockers
+uv run evolva benchmark smoke \
+  --metadata /path/to/benchmark/metadata.csv \
+  --attachments /path/to/benchmark/attachments \
+  --limit 10
+
+# Generate task prompts without spending model calls
+uv run evolva benchmark run \
+  --metadata /path/to/benchmark/metadata.csv \
+  --attachments /path/to/benchmark/attachments \
+  --limit 3
+
+# Run a tiny sample through the configured Evolva agent
+uv run evolva benchmark run \
+  --metadata /path/to/benchmark/metadata.csv \
+  --attachments /path/to/benchmark/attachments \
+  --limit 3 \
+  --run-agent \
+  --yes
+
+# Preview one attachment and run optional deep extraction when supported
+uv run evolva benchmark inspect-file /path/to/attachment.png --deep
+```
+
+Native benchmark helper tools are also available inside Evolva: `web_fetch`, `file_to_text`, `spreadsheet_describe`, `normalize_answer`, `benchmark_task_context`, `benchmark_smoke_check`, `benchmark_tool_health`, `ocr_image`, `audio_transcribe`, `video_probe`, `video_extract_frames`, `pdf_extract`, and `yt_dlp_info`. They use the Python standard library first and opportunistically use installed packages or binaries when present.
+
+For web-heavy benchmark questions, Evolva now has two paths:
+
+- Native online search tool: `web_search` / `web_search_pro` uses `TAVILY_API_KEY`, `BRAVE_API_KEY`, or `SERPAPI_API_KEY` when configured, with DuckDuckGo HTML fallback.
+- MCP browser/search presets: persist local stdio MCP configs without installing or starting anything until you explicitly list/call MCP tools.
+
+```bash
+# See supported browser/search/fetch MCP presets
+uv run evolva mcp presets
+
+# Add a Playwright browser MCP server for JS-rendered pages and browser actions
+uv run evolva mcp add-preset playwright
+
+# Add a Brave Search MCP server; the key is stored in the local .evolva MCP config
+uv run evolva mcp add-preset brave-search --env BRAVE_API_KEY=...
+
+# Or add any custom stdio MCP server with environment variables
+uv run evolva mcp add search npx --env BRAVE_API_KEY=... -y @modelcontextprotocol/server-brave-search
+
+# Check schemas/health after the first network-enabled install/run
+uv run evolva mcp health --refresh
+uv run evolva mcp tools playwright
+```
+
+First `npx`/`uvx` runs may download MCP packages and browser assets, so they require network access. `benchmark health` reports configured browser/search MCP servers, local browser runtimes (`node`/`npx`/Playwright), and search API key presence.
+
+For higher benchmark coverage, install optional local tools and then re-run `uv run evolva benchmark health`:
+
+```bash
+brew install tesseract ffmpeg yt-dlp poppler
+uv pip install pypdf openpyxl pandas pyarrow pillow pytesseract openai-whisper
+```
+
+These dependencies are intentionally optional: Evolva reports missing capabilities clearly instead of making benchmark inspection fail at import time. `tesseract`/`pytesseract` improves image OCR, `ffmpeg`/`ffprobe` enables video frame and media metadata extraction, `openai-whisper` enables local audio transcription, `yt-dlp` helps with YouTube/media metadata, `poppler` adds `pdftotext`, and the Python packages improve PDF/table/image extraction.
+
+Current scope: Evolva can load benchmark metadata, resolve local attachments, preview text/CSV/DOCX/PPTX/XLSX/PDF best-effort/ZIP/table files, classify likely tool requirements, and prepare prompts. Full benchmark accuracy still depends on a configured LLM plus external tools for dynamic browsing/search, robust PDF/OCR, image reasoning, audio transcription, and video/YouTube extraction. Good MCP additions for those gaps include Playwright/browser, fetch/search, Docling or MarkItDown, OCR/vision, Whisper, ffmpeg/yt-dlp, and table engines such as DuckDB/pandas.
