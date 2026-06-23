@@ -385,8 +385,9 @@ class Sandbox:
         data = dict(result.data) if isinstance(result.data, dict) else {"raw_data": result.data}
         data["rollback"] = rollback
         output = f"{result.output}\nRolled back sandbox snapshot: restored={rollback['restored']} removed={rollback['removed']}"
-        if rollback["skipped"]:
-            output += f" skipped={len(rollback['skipped'])}"
+        skipped = rollback.get("skipped")
+        if isinstance(skipped, list) and skipped:
+            output += f" skipped={len(skipped)}"
         return ToolResult(False, output, data)
 
 
