@@ -46,18 +46,30 @@ def test_dream_engine_analyzes_trace_and_writes_report(temp_config):
     assert "Dream" in agent.context.render("Dream")
 
 
-def test_dream_engine_apply_promotes_high_confidence_proposals(temp_config):
+def test_dream_engine_apply_stages_candidates_until_verified(temp_config):
     agent = EvolvaAgent(temp_config, assume_yes=True)
     _failed_trace(agent)
 
     report = DreamEngine(agent).run(trace_limit=5, apply=True)
 
     assert report.mode == "apply"
+    assert report.applied == 0
+    assert report.candidates
+    assert all(candidate.status == "accepted" for candidate in report.candidates)
+    assert any(action.kind == "verify_before_promotion" for action in report.actions)
+    assert "trace_analysis" not in agent.evolution.render_status()
+
+
+def test_dream_engine_legacy_apply_can_write_immediately(temp_config):
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+    object.__setattr__(agent.config, "dream_require_verification", False)
+    _failed_trace(agent)
+
+    report = DreamEngine(agent).run(trace_limit=5, apply=True)
+
     assert report.applied >= 1
     assert any(candidate.status == "applied" for candidate in report.candidates)
-    assert any(candidate.status == "applied" for candidate in DreamEngine(agent).load_backlog().candidates)
     assert "trace_analysis" in agent.evolution.render_status()
-    assert any("tool_failure" in skill.path.read_text(encoding="utf-8") for skill in agent.skills.list())
 
 
 def test_dream_engine_respects_drift_guard_threshold(temp_config):
@@ -116,6 +128,36 @@ def test_dream_candidate_roundtrip_and_backlog_dedupe(temp_config):
     assert backlog.candidates[0].verifier.type == "eval"
 
 
+def test_dream_status_renders_gate_and_candidate_counts(temp_config):
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+    engine = DreamEngine(agent)
+    engine._merge_backlog(
+        [
+            DreamCandidate(
+                id="cand_status_wait",
+                title="Waiting candidate",
+                category="workflow",
+                verifier=DreamVerifier(type="manual_review"),
+                status="accepted",
+            ),
+            DreamCandidate(
+                id="cand_status_done",
+                title="Promoted candidate",
+                category="workflow",
+                verifier=DreamVerifier(type="manual_review"),
+                status="promoted",
+            ),
+        ]
+    )
+
+    rendered = engine.render_status()
+
+    assert "Dream status" in rendered
+    assert "Verification gate: required" in rendered
+    assert "pending_verification=1" in rendered
+    assert "promoted=1" in rendered
+
+
 def test_dream_verify_backlog_runs_eval_verifier_and_promotes(temp_config):
     agent = EvolvaAgent(temp_config, assume_yes=True)
     engine = DreamEngine(agent)
@@ -142,6 +184,8 @@ def test_dream_verify_backlog_runs_eval_verifier_and_promotes(temp_config):
     assert results and results[0].ok
     assert backlog.candidates[0].status == "promoted"
     assert backlog.candidates[0].verification["ok"] is True
+    assert "evolution_fingerprint" in backlog.candidates[0].verification
+    assert "dream_promote" in agent.evolution.render_status()
     assert "Dream verification: 1/1 passed" in engine.render_verification(results)
 
 

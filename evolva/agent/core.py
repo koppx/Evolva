@@ -66,7 +66,7 @@ class EvolvaAgent:
     def __init__(self, config: AgentConfig | None = None, *, assume_yes: bool = False, confirmer: Any | None = None):
         self.config = config or AgentConfig()
         self.config.ensure_dirs()
-        self.memory = MemoryStore(self.config.memory_file)
+        self.memory = MemoryStore(self.config.memory_file, context_min_confidence=self.config.memory_context_min_confidence)
         self.skills = SkillStore(self.config.skills_dir)
         self.context = ContextStore(self.config.context_file)
         self.todos = TodoStore(self.config.todo_file)
@@ -83,15 +83,39 @@ class EvolvaAgent:
                 container_cpus=self.config.sandbox_container_cpus,
                 container_pids_limit=self.config.sandbox_container_pids_limit,
                 container_user=self.config.sandbox_container_user,
+                writable_roots=self.config.sandbox_writable_roots,
+                rollback_on_failure=self.config.sandbox_rollback_on_failure,
+                snapshot_roots=self.config.sandbox_snapshot_roots,
+                max_snapshot_bytes=self.config.sandbox_max_snapshot_bytes,
             )
         )
-        self.policy = PolicyEngine(PolicyConfig(self.config.root, self.config.workspace, profile=self.config.profile))
+        self.policy = PolicyEngine(
+            PolicyConfig(
+                self.config.root,
+                self.config.workspace,
+                profile=self.config.profile,
+                policy_file=self.config.policy_file,
+                audit_file=self.config.policy_audit_file,
+            )
+        )
         self.observability = ObservabilitySink(self.config.metrics_file, self.config.alerts_file, enabled=self.config.observability_enabled)
         self.tracer = TraceRecorder(self.config.traces_dir, enabled=self.config.tracing_enabled, observability=self.observability)
         self.artifacts = ArtifactManifest(self.config.artifacts_file, self.config.root)
-        self.mcp = MCPManager(self.config.mcp_config_file, root=self.config.root)
+        self.mcp = MCPManager(
+            self.config.mcp_config_file,
+            root=self.config.root,
+            tool_cache_file=self.config.mcp_tools_cache_file,
+            tool_cache_ttl=self.config.mcp_tools_cache_ttl,
+        )
         self.llm = OpenAICompatibleLLM(self.config)
-        self.coordinator = MultiAgentCoordinator(self.llm, self.memory, self.skills, self.todos)
+        self.coordinator = MultiAgentCoordinator(
+            self.llm,
+            self.memory,
+            self.skills,
+            self.todos,
+            max_roles_per_run=self.config.multi_agent_max_roles,
+            max_tool_steps=self.config.multi_agent_tool_steps,
+        )
         self.evolution = SelfEvolutionEngine(self.memory, self.skills)
         self.tools: ToolRegistry = build_registry(
             self.sandbox,
@@ -105,6 +129,7 @@ class EvolvaAgent:
             self.config.repo_index_file,
             self._run_dream_tool,
         )
+        self.coordinator.attach_tools(self._call_tool, self.tools)
         self.graph_runtime = EvolvaLangGraphRuntime(self)
         self.assume_yes = assume_yes
         self.confirmer = confirmer
@@ -283,10 +308,10 @@ class EvolvaAgent:
                 tool = self.tools.get(name)
             except KeyError as exc:
                 policy = PolicyDecision(False, "high", f"Unknown tool: {name}", False, [], [], ["unknown_tool"])
-                self.tracer.event("policy_decision", {"tool": name, "args": args, **policy.to_dict()})
+                self.tracer.event("policy_decision", {"tool": name, "args": args, "audit": bool(self.config.policy_audit_file), **policy.to_dict()})
                 return ToolResult(False, f"Tool error: {exc}")
             policy = self.policy.check_tool(name, args, capabilities=tool.capabilities)
-            self.tracer.event("policy_decision", {"tool": name, "args": args, **policy.to_dict()})
+            self.tracer.event("policy_decision", {"tool": name, "args": args, "audit": bool(self.config.policy_audit_file), **policy.to_dict()})
             if not policy.allowed:
                 return ToolResult(False, f"Policy denied `{name}`: {policy.reason}", policy.to_dict())
             needs_confirmation = tool.needs_confirmation or policy.requires_confirmation
@@ -310,6 +335,7 @@ class EvolvaAgent:
                     "ok": result.ok,
                     "latency_ms": int((time.time() - started) * 1000),
                     "output": result.output[:4000],
+                    "result_data": result.data if isinstance(result.data, dict) else None,
                 },
             )
             self._record_tool_artifacts(name, result, event_id or "")

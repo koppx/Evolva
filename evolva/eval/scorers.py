@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from evolva.storage import read_jsonl
+
 
 @dataclass
 class ScoreCheck:
@@ -153,6 +155,7 @@ class ScorerRegistry:
             ("expected_trace_schema", "trace_schema"),
             ("expected_artifact_manifest", "artifact_manifest"),
             ("expected_metrics", "metric"),
+            ("expected_policy_audit", "policy_audit"),
             ("expected_tool_sequence", "tool_sequence"),
             ("max_duration_ms", "latency"),
             ("command_checks", "command"),
@@ -181,6 +184,7 @@ def build_default_registry() -> ScorerRegistry:
     registry.register("trace_schema", trace_schema_scorer)
     registry.register("artifact_manifest", artifact_manifest_scorer)
     registry.register("metric", metric_scorer)
+    registry.register("policy_audit", policy_audit_scorer)
     registry.register("tool_sequence", tool_sequence_scorer)
     registry.register("command", command_scorer)
     return registry
@@ -538,10 +542,12 @@ def metric_scorer(task: dict[str, Any], context: ScorerContext) -> Iterable[Scor
             continue
         metric_name = str(spec.get("name", ""))
         tags = {str(key): str(value) for key, value in dict(spec.get("tags", {})).items()}
+        fields = dict(spec.get("fields", {}))
         matched = [
             record
             for record in records
             if record.name == metric_name and all(str(record.tags.get(key, "")) == value for key, value in tags.items())
+            and all(_lookup_path(record.fields, key) == value for key, value in fields.items())
         ]
         checks.append(
             ScoreCheck(
@@ -551,6 +557,35 @@ def metric_scorer(task: dict[str, Any], context: ScorerContext) -> Iterable[Scor
                 expected=spec,
                 actual=[record.to_dict() for record in matched[-3:]],
                 evidence="metric record matched" if matched else "metric record missing",
+            )
+        )
+    return checks
+
+
+def policy_audit_scorer(task: dict[str, Any], context: ScorerContext) -> Iterable[ScoreCheck]:
+    specs = task.get("expected_policy_audit", [])
+    if not specs:
+        return []
+    if context.agent is None or not hasattr(context.agent.config, "policy_audit_file"):
+        return [ScoreCheck("policy_audit:agent", False, "observability", evidence="policy audit unavailable")]
+    rows = read_jsonl(context.agent.config.policy_audit_file)
+    checks: list[ScoreCheck] = []
+    for spec in specs:
+        if isinstance(spec, str):
+            spec = {"tool": spec}
+        if not isinstance(spec, dict):
+            checks.append(ScoreCheck("policy_audit:config", False, "observability", evidence="policy audit spec must be string or object"))
+            continue
+        matched = [row for row in rows if _dict_matches(row, spec)]
+        label = spec.get("tool") or spec.get("risk") or len(checks)
+        checks.append(
+            ScoreCheck(
+                name=f"policy_audit:{label}",
+                passed=bool(matched),
+                dimension="observability",
+                expected=spec,
+                actual=matched[-3:],
+                evidence="policy audit row matched" if matched else "policy audit row missing",
             )
         )
     return checks
@@ -665,6 +700,30 @@ def _lookup_json_path(value: Any, path: str) -> Any:
         else:
             return None
     return cur
+
+
+def _lookup_path(value: Any, path: str) -> Any:
+    cur = value
+    for part in str(path).split("."):
+        if isinstance(cur, dict):
+            cur = cur.get(part)
+        else:
+            return None
+    return cur
+
+
+def _dict_matches(row: dict[str, Any], spec: dict[str, Any]) -> bool:
+    for key, expected in spec.items():
+        actual = _lookup_path(row, str(key))
+        if isinstance(actual, list):
+            if isinstance(expected, list):
+                if not all(item in actual for item in expected):
+                    return False
+            elif expected not in actual:
+                return False
+        elif actual != expected:
+            return False
+    return True
 
 
 def _is_subsequence(expected: list[str], observed: list[str]) -> bool:

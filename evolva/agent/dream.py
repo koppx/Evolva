@@ -279,7 +279,8 @@ class DreamEngine:
         insights = self._dedupe_insights(insights)
 
         applied_reports: list[EvolutionReport] = []
-        if apply:
+        require_verification = bool(getattr(self.agent.config, "dream_require_verification", True))
+        if apply and not require_verification:
             accepted_ids = {item.id for item in accepted}
             applicable = [
                 proposal
@@ -296,6 +297,12 @@ class DreamEngine:
                     candidate.status = "applied"
                     candidate.updated_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
             candidates = self._merge_backlog(candidates).candidates
+        elif apply and require_verification:
+            for action in actions:
+                if action.kind == "stage_lesson":
+                    action.kind = "verify_before_promotion"
+                    action.title = "Verify candidate before promotion"
+                    action.detail += " Verification is required before writing Memory / Skill."
 
         report = DreamReport(
             dream_id=time.strftime("dream_%Y%m%d_%H%M%S"),
@@ -587,6 +594,33 @@ class DreamEngine:
             lines.append("- No candidates yet. Run /dream after collecting traces or eval reports.")
         return "\n".join(lines)
 
+    def render_status(self) -> str:
+        """Render production-facing Dream gate and promotion status."""
+        backlog = self.load_backlog()
+        counts: dict[str, int] = {}
+        for item in backlog.candidates:
+            counts[item.status] = counts.get(item.status, 0) + 1
+        pending = counts.get("accepted", 0) + counts.get("applied", 0)
+        verified = counts.get("verified", 0)
+        promoted = counts.get("promoted", 0)
+        gate_required = bool(getattr(self.agent.config, "dream_require_verification", True))
+        lines = [
+            "Dream status",
+            f"- Verification gate: {'required' if gate_required else 'legacy immediate apply'}",
+            f"- Backlog: total={len(backlog.candidates)} pending_verification={pending} verified={verified} promoted={promoted}",
+        ]
+        if counts:
+            lines.append("- Status counts: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+        if verified:
+            lines.append("- Next: run /dream verify --promote to promote verified candidates.")
+        elif pending:
+            lines.append("- Next: run /dream verify before promotion.")
+        else:
+            lines.append("- Next: run /dream after collecting trace or eval evidence.")
+        if backlog.updated_at:
+            lines.append(f"- Updated: {backlog.updated_at}")
+        return "\n".join(lines)
+
     def verify_backlog(
         self,
         *,
@@ -651,9 +685,13 @@ class DreamEngine:
             if result.ok and self._status_rank(result.status) > self._status_rank(candidate.status):
                 candidate.status = result.status
             if promote and candidate.status == "verified":
+                promoted_report = self._promote_candidate(candidate)
                 candidate.status = "promoted"
                 candidate.updated_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
                 candidate.verification["promoted_at"] = candidate.updated_at
+                if promoted_report is not None:
+                    candidate.verification["evolution_fingerprint"] = promoted_report.fingerprint
+                    result.detail += f"; promoted_at={candidate.updated_at}"
             results.append(result)
 
         if candidates:
@@ -706,6 +744,22 @@ class DreamEngine:
 
     def _status_rank(self, status: str) -> int:
         return {"rejected": -1, "proposed": 0, "accepted": 1, "applied": 2, "verified": 3, "promoted": 4}.get(status, 0)
+
+    def _promote_candidate(self, candidate: DreamCandidate) -> EvolutionReport | None:
+        change = candidate.proposed_change or {}
+        if change.get("kind") != "evolution_lesson":
+            return None
+        feedback = str(change.get("feedback") or "").strip()
+        if not feedback:
+            return None
+        evidence = [*candidate.evidence_ids, *[str(item) for item in change.get("evidence_refs", [])]]
+        return self.agent.evolution.evolve(
+            feedback,
+            trigger=f"dream_promote:{candidate.source}",
+            category=candidate.category,
+            evidence=evidence,
+            confidence=candidate.confidence,
+        )
 
     def _default_eval_tasks_path(self) -> Path | None:
         path = self.agent.config.root / "evals" / "tasks" / "smoke.jsonl"

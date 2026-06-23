@@ -42,12 +42,14 @@ Commands:
   /sandbox smoke       Run fixed sandbox backend smoke check
   /policy              Show guardrail policy
   /repo build          Build local repository index
+  /repo status         Show repository index freshness and skipped files
   /repo search <query> Search symbols, references, and code chunks
   /mcp                 List MCP servers
   /mcp add <name> <cmd...>
                        Add a stdio MCP server to the local workspace
   /mcp remove <name>   Remove a local MCP server config
   /mcp tools [server]  List MCP tools
+  /mcp health [server] Check MCP health and schema cache status
   /image <path|url> [text]
                        Ask with one image
   /evolve [feedback]   Turn feedback into memory + skill
@@ -60,8 +62,11 @@ Commands:
                        Analyze eval failures and apply proposals
   /dream               Run offline trace/eval/memory reflection
   /dream backlog       Show staged Dream improvement candidates
+  /dream status        Show Dream gate and promotion status
   /dream verify        Run candidate verifiers against local eval/trace evidence
-  /dream apply         Apply high-confidence dream proposals
+  /dream verify --promote
+                       Promote verified Dream candidates
+  /dream apply         Stage high-confidence dream proposals
   /dream --min-confidence 0.8
                        Raise the Dreaming drift-guard threshold
   /loop list           List repeatable agent loops
@@ -181,10 +186,12 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
         rest = line.removeprefix("/repo").strip()
         if rest in {"", "build"}:
             result = agent._call_tool("repo_index_build", {})
+        elif rest == "status":
+            result = agent._call_tool("repo_index_status", {})
         elif rest.startswith("search "):
             result = agent._call_tool("repo_index_search", {"query": rest.removeprefix("search ").strip()})
         else:
-            print("Usage: /repo build | /repo search <query>")
+            print("Usage: /repo build | /repo status | /repo search <query>")
             return True
         print(result.output)
         return True
@@ -204,8 +211,11 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
         elif rest.startswith("tools"):
             server = rest.removeprefix("tools").strip()
             print(agent._call_tool("mcp_tools", {"server": server}).output)
+        elif rest.startswith("health"):
+            server = rest.removeprefix("health").strip()
+            print(agent._call_tool("mcp_health", {"server": server}).output)
         else:
-            print("Usage: /mcp | /mcp add <name> <command> [args...] | /mcp remove <name> | /mcp tools [server] | /run mcp_call {...}")
+            print("Usage: /mcp | /mcp add <name> <command> [args...] | /mcp remove <name> | /mcp tools [server] | /mcp health [server] | /run mcp_call {...}")
         return True
     if line.startswith("/image"):
         rest = line.removeprefix("/image").strip()
@@ -258,7 +268,10 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
         rest = line.removeprefix("/dream").strip()
         parts = shlex.split(rest) if rest else []
         engine = DreamEngine(agent)
-        if parts and parts[0] in {"backlog", "candidates", "status"}:
+        if parts and parts[0] in {"status", "health"}:
+            print(engine.render_status())
+            return True
+        if parts and parts[0] in {"backlog", "candidates"}:
             print(engine.render_backlog())
             return True
         if parts and parts[0] == "verify":
@@ -512,6 +525,9 @@ def mcp_cmd(args: argparse.Namespace) -> int:
         return 0 if result.ok else 1
     if args.mcp_cmd == "tools":
         print(agent._call_tool("mcp_tools", {"server": args.server or ""}).output)
+        return 0
+    if args.mcp_cmd == "health":
+        print(agent._call_tool("mcp_health", {"server": args.server or "", "refresh": bool(args.refresh)}).output)
         return 0
     if args.mcp_cmd == "call":
         try:
@@ -790,7 +806,7 @@ def build_parser() -> argparse.ArgumentParser:
     dream_verify.add_argument("--promote", action="store_true", help="Promote verified candidates in the Dream backlog")
     dream_verify.add_argument("--json", action="store_true", help="Print verifier results as JSON")
     dream_verify.set_defaults(func=dream_cmd)
-    dream_p.add_argument("--apply", action="store_true", help="Stage high-confidence proposals through Memory/Skill with verifiers recorded")
+    dream_p.add_argument("--apply", action="store_true", help="Stage high-confidence proposals for verifier review")
     dream_p.add_argument("--limit", type=int, default=20, help="Recent trace run limit")
     dream_p.add_argument("--report", type=lambda s: __import__("pathlib").Path(s), help="Eval report JSON; defaults to latest")
     dream_p.add_argument("--min-confidence", type=float, default=None, help="Minimum confidence for automatic Dreaming promotion")
@@ -870,6 +886,11 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_tools_p.add_argument("server", nargs="?")
     mcp_tools_p.add_argument("--yes", action="store_true")
     mcp_tools_p.set_defaults(func=mcp_cmd)
+    mcp_health_p = mcp_sub.add_parser("health", help="Check MCP server health and schema cache")
+    mcp_health_p.add_argument("server", nargs="?")
+    mcp_health_p.add_argument("--refresh", action="store_true", help="Bypass tool schema cache")
+    mcp_health_p.add_argument("--yes", action="store_true")
+    mcp_health_p.set_defaults(func=mcp_cmd)
     mcp_call_p = mcp_sub.add_parser("call", help="Call an MCP tool")
     mcp_call_p.add_argument("server")
     mcp_call_p.add_argument("tool")

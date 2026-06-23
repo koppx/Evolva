@@ -55,7 +55,7 @@ TUI keys:
   /exit          Quit
 
 Commands:
-  /help, /config [set|wizard|clear], /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp [add|remove|tools], /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /dream [backlog|verify|apply|--min-confidence n], /loop [list|show|run], /run <tool> <json>
+  /help, /config [set|wizard|clear], /tools, /skills, /memory [query|stats|recent n], /context [query], /todo, /agents, /trace [list|show|context], /model [name], /policy, /mcp [add|remove|tools|health], /image <path|url> [text], /evolve [feedback|status|audit|trace|apply-trace|eval|apply-eval], /dream [status|backlog|verify|verify --promote|apply|--min-confidence n], /loop [list|show|run], /run <tool> <json>
 """.strip()
 
 
@@ -389,10 +389,12 @@ class EvolvaTUI:
                 rest = line.removeprefix("/repo").strip()
                 if rest in {"", "build"}:
                     result = self.agent._call_tool("repo_index_build", {})
+                elif rest == "status":
+                    result = self.agent._call_tool("repo_index_status", {})
                 elif rest.startswith("search "):
                     result = self.agent._call_tool("repo_index_search", {"query": rest.removeprefix("search ").strip()})
                 else:
-                    self._add_system("Usage: /repo build | /repo search <query>")
+                    self._add_system("Usage: /repo build | /repo status | /repo search <query>")
                     return
                 self._add_system(result.output)
             elif line.startswith("/mcp"):
@@ -411,8 +413,11 @@ class EvolvaTUI:
                 elif rest.startswith("tools"):
                     server = rest.removeprefix("tools").strip()
                     self._add_system(self.agent._call_tool("mcp_tools", {"server": server}).output)
+                elif rest.startswith("health"):
+                    server = rest.removeprefix("health").strip()
+                    self._add_system(self.agent._call_tool("mcp_health", {"server": server}).output)
                 else:
-                    self._add_system("Usage: /mcp | /mcp add <name> <command> [args...] | /mcp remove <name> | /mcp tools [server] | /run mcp_call {...}")
+                    self._add_system("Usage: /mcp | /mcp add <name> <command> [args...] | /mcp remove <name> | /mcp tools [server] | /mcp health [server] | /run mcp_call {...}")
             elif line.startswith("/image"):
                 rest = line.removeprefix("/image").strip()
                 if not rest:
@@ -461,7 +466,10 @@ class EvolvaTUI:
                 rest = line.removeprefix("/dream").strip()
                 parts = shlex.split(rest) if rest else []
                 engine = DreamEngine(self.agent)
-                if parts and parts[0] in {"backlog", "candidates", "status"}:
+                if parts and parts[0] in {"status", "health"}:
+                    self._add_system(engine.render_status())
+                    return
+                if parts and parts[0] in {"backlog", "candidates"}:
                     self._add_system(engine.render_backlog())
                     return
                 if parts and parts[0] == "verify":

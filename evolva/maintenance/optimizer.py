@@ -44,7 +44,16 @@ class DailyOptimizer:
         "evolva/workflow/__pycache__",
         "tests/__pycache__",
     ]
-    GENERATED_DIRS = ["evolva/context", "evolva/memory", "evolva/todo", "evolva/traces", "evolva/eval_results", "evolva/workspace", "evolva/workflows"]
+    GENERATED_DIRS = [
+        ".evolva",
+        "evolva/context",
+        "evolva/memory",
+        "evolva/todo",
+        "evolva/traces",
+        "evolva/eval_results",
+        "evolva/workspace",
+        "evolva/workflows",
+    ]
     USER_FACING_FILES = ["README.md", "pyproject.toml"]
 
     def __init__(self, root: Path):

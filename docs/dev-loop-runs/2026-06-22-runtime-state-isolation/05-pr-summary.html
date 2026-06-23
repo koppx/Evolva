@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Runtime State Isolation Summary</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 40px; line-height: 1.5; color: #17202a; }
+    h1, h2 { color: #0b0f14; }
+    code { background: #f4f6f8; padding: 2px 5px; border-radius: 4px; }
+    .pass { color: #126b3f; font-weight: 700; }
+    section { max-width: 920px; margin-bottom: 28px; }
+  </style>
+</head>
+<body>
+  <section>
+    <h1>Runtime State Isolation</h1>
+    <p><strong>Problem:</strong> Evolva runtime artifacts defaulted into the Python package tree, LLM calls had only minimal error recovery, local command execution lacked rollback boundaries, policy behavior was mostly hard-coded, and production safety signals were not all regression-tested.</p>
+    <p><strong>Change:</strong> Runtime state now defaults to <code>.evolva/</code>, with <code>EVOLVA_RUNTIME_HOME</code> for deployment-specific placement. The LLM client now supports runtime timeout config, bounded transient retries, and JSON response validation. Sandbox execution now supports writable roots and failure rollback snapshots. Policy profiles can be configured and audited as JSONL decisions. Observability and Eval now cover policy audit, sandbox rollback, LLM retry, and metric fields. Workflow runs now persist checkpoints and can resume successful unchanged nodes. MCP now has runtime schema cache, health checks, and health/error metrics. Memory and Skills now enforce status/confidence gates before prompt injection. Repo Index now records manifests, detects stale snapshots, and reuses unchanged chunks. Multi-agent collaboration now returns structured reports and emits fallback metrics. Dream/Self-Evolution now stages candidates by default, requires verifier-backed promotion before durable Memory / Skill writes, and exposes the gate/promotion state through CLI/TUI status.</p>
+    <p><strong>Verdict:</strong> <span class="pass">PASS</span></p>
+  </section>
+  <section>
+    <h2>What Changed</h2>
+    <ul>
+      <li>Added runtime home helpers in <code>evolva/config.py</code>.</li>
+      <li>Moved default runtime state paths to <code>.evolva/</code>.</li>
+      <li>Preserved explicit test/embedder path overrides.</li>
+      <li>Updated ignore/index/maintenance boundaries and README wording.</li>
+      <li>Added runtime path tests.</li>
+      <li>Added LLM transient retry and <code>chat_json()</code> validation.</li>
+      <li>Added sandbox writable-root checks and failed-execution rollback snapshots.</li>
+      <li>Added policy profile overlays and compact audit logging.</li>
+      <li>Added trace-derived metrics and eval checks for production safety signals.</li>
+      <li>Added durable Workflow run checkpoints and node-fingerprint resume.</li>
+      <li>Added MCP schema cache, degraded cache fallback, and health command coverage.</li>
+      <li>Added Memory / Skill governance status, audit tools, and active-only context injection.</li>
+      <li>Added Repo Index manifest, skipped diagnostics, stale detection, and status command coverage.</li>
+      <li>Added Multi-agent role budget validation, structured reports, and fallback observability.</li>
+      <li>Added Dream verification gating, promoted-candidate fingerprinting, and explicit legacy immediate-apply compatibility.</li>
+      <li>Added Dream CLI/TUI status rendering for verification gate, candidate counts, and next operator action.</li>
+    </ul>
+  </section>
+  <section>
+    <h2>Validation</h2>
+    <ul>
+      <li><code>uv run pytest tests/test_config_runtime_paths.py tests/test_state_stores.py tests/test_sandbox_policy_tools.py tests/test_llm_and_images.py -q</code>: 42 passed.</li>
+      <li><code>uv run pytest tests/test_config_runtime_paths.py tests/test_llm_and_images.py tests/test_agent_cli_workflow_mcp_eval_tui.py::test_agent_uses_langgraph_runtime_for_llm_tool_loop -q</code>: 19 passed.</li>
+      <li><code>uv run pytest tests/test_sandbox_policy_tools.py -q</code>: 14 passed.</li>
+      <li><code>uv run pytest tests/test_config_runtime_paths.py tests/test_sandbox_policy_tools.py tests/test_core.py -q</code>: 39 passed.</li>
+      <li><code>uv run pytest tests/test_config_runtime_paths.py tests/test_sandbox_policy_tools.py tests/test_core.py -q</code>: 42 passed.</li>
+      <li><code>uv run pytest -q</code>: 153 passed, 1 skipped.</li>
+      <li><code>.venv/bin/python -m evolva.cli eval evals/tasks/security.jsonl --yes --baseline evals/baselines/security.json --min-score 1.0 --no-regression</code>: 8/8 passed.</li>
+      <li><code>.venv/bin/python -m pytest tests/test_agent_cli_workflow_mcp_eval_tui.py::test_workflow_engine_tool_role_agent_templates_and_errors tests/test_agent_cli_workflow_mcp_eval_tui.py::test_workflow_engine_runs_explicit_dag_and_rejects_cycles tests/test_agent_cli_workflow_mcp_eval_tui.py::test_workflow_engine_persists_and_resumes_successful_nodes tests/test_core.py::test_workflow_engine_tool_node -q</code>: 4 passed.</li>
+      <li><code>.venv/bin/python -m pytest tests/test_agent_cli_workflow_mcp_eval_tui.py::test_mcp_manager_config_render_and_fake_client tests/test_agent_cli_workflow_mcp_eval_tui.py::test_mcp_manager_tool_cache_and_health tests/test_agent_cli_workflow_mcp_eval_tui.py::test_cli_parser_main_once_and_handle_commands tests/test_agent_cli_workflow_mcp_eval_tui.py::test_cli_mcp_cmd_json_error_and_success tests/test_config_runtime_paths.py -q</code>: 11 passed.</li>
+      <li><code>.venv/bin/python -m pytest tests/test_state_stores.py::test_memory_search_ranks_exact_matches tests/test_state_stores.py::test_memory_governance_filters_context_and_tracks_status tests/test_state_stores.py::test_skill_store_seeds_sanitizes_and_appends tests/test_state_stores.py::test_skill_governance_filters_inactive_skills_and_audits tests/test_sandbox_policy_tools.py::test_builtin_file_memory_context_todo_and_policy_tools tests/test_config_runtime_paths.py::test_agent_config_reads_request_timeout_from_runtime_config -q</code>: 6 passed.</li>
+      <li><code>.venv/bin/python -m pytest tests/test_repo_index.py tests/test_agent_cli_workflow_mcp_eval_tui.py::test_cli_parser_main_once_and_handle_commands -q</code>: 7 passed.</li>
+      <li><code>.venv/bin/python -m pytest tests/test_agent_cli_workflow_mcp_eval_tui.py::test_multi_agent_roles_fallback_and_errors tests/test_agent_cli_workflow_mcp_eval_tui.py::test_multi_agent_reports_budget_and_llm_failure_fallback tests/test_sandbox_policy_tools.py::test_builtin_multi_agent_tools_return_structured_reports tests/test_state_stores.py::test_trace_recorder_emits_metrics_and_alerts -q</code>: 4 passed.</li>
+      <li><code>.venv/bin/python -m pytest tests/test_dream.py -q</code>: 14 passed.</li>
+      <li><code>.venv/bin/python -m pytest tests/test_agent_cli_workflow_mcp_eval_tui.py::test_cli_parser_main_once_and_handle_commands tests/test_agent_cli_workflow_mcp_eval_tui.py::test_tui_non_curses_command_completion_queue_and_confirmation -q</code>: 2 passed.</li>
+      <li><code>.venv/bin/python -m pytest tests/test_agent_cli_workflow_mcp_eval_tui.py::test_cli_dream_cmd_integration -q</code>: 1 passed.</li>
+      <li><code>.venv/bin/python -m pytest -q</code>: 163 passed, 1 skipped.</li>
+      <li><code>uv run ruff check .</code>: passed.</li>
+      <li><code>.venv/bin/python -m ruff check evolva/agent/dream.py evolva/config.py tests/test_dream.py</code>: passed.</li>
+      <li><code>.venv/bin/python -m ruff check evolva/agent/dream.py evolva/cli.py evolva/tui.py tests/test_dream.py tests/test_agent_cli_workflow_mcp_eval_tui.py</code>: passed.</li>
+    </ul>
+  </section>
+  <section>
+    <h2>Residual Risk</h2>
+    <p>Existing ignored legacy runtime files under <code>evolva/</code> are not deleted. Cleanup/migration can be handled as a separate operational task.</p>
+  </section>
+</body>
+</html>

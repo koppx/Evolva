@@ -44,20 +44,66 @@ def test_memory_search_ranks_exact_matches(tmp_path):
     assert not store.search("pytest")
 
 
+def test_memory_governance_filters_context_and_tracks_status(tmp_path):
+    store = MemoryStore(tmp_path / "memory.jsonl")
+    low = store.add("fact", "maybe flaky advice", confidence=0.2, evidence=["trace:low"])
+    draft = store.add("lesson", "draft lesson", confidence=0.9, status="draft", evidence=["review:pending"])
+    active = store.add("lesson", "verified lesson", confidence=0.9, evidence=["eval:pass"])
+
+    context = store.context("lesson advice")
+    assert "verified lesson" in context
+    assert "maybe flaky advice" not in context
+    assert "draft lesson" not in context
+    assert store.search("draft", statuses=None)[0].id == draft.id
+    assert store.update_status(draft.id, "active", reason="reviewed")
+    assert "draft lesson" in store.context("draft")
+    assert store.update_status(low.id, "quarantined", reason="low confidence")
+    audit = store.audit()
+    assert audit["active"] == 2
+    assert audit["inactive"] == 1
+    assert audit["active_missing_evidence"] == 0
+    with pytest.raises(ValueError, match="invalid memory status"):
+        store.update_status(active.id, "bad")
+
+
 def test_skill_store_seeds_sanitizes_and_appends(tmp_path):
     skills = SkillStore(tmp_path / "skills")
     assert "general_agent" in [s.name for s in skills.list()]
     path = skills.upsert("Check Python!!!", "Run py_compile", metadata={"source": "self_evolution", "category": "verification"})
     assert path.name == "check_python.md"
     skills.upsert("Check Python!!!", "Run pytest")
+    skills.upsert("Check Python!!!", "Run py_compile", metadata={"triggers": ["pytest"], "source": "self_evolution"})
     text = path.read_text()
     assert "source: self_evolution" in text and "Run py_compile" in text and "Run pytest" in text
+    assert text.count("---") == 2
     assert "check_python" in skills.context("pytest")
     assert skills.list()[0].metadata is not None
     triggered = skills.upsert("Trace Guard", "Inspect trace before promotion", metadata={"triggers": ["trace", "promotion"], "source": "manual"})
     assert triggered.exists()
     assert skills.match("promotion gate")[0].name == "trace_guard"
     assert skills.stats()["evolved"] == 1
+
+
+def test_skill_governance_filters_inactive_skills_and_audits(tmp_path):
+    skills = SkillStore(tmp_path / "skills")
+    active = skills.upsert("Trace Guard", "Inspect trace before promotion", metadata={"triggers": ["trace"], "source": "manual"})
+    draft = skills.upsert("Draft Skill", "Do not inject yet", metadata={"status": "draft", "triggers": ["draft"], "source": "manual"})
+
+    assert "Trace Guard" not in active.read_text(encoding="utf-8")
+    assert "trace_guard" in skills.context("trace")
+    assert "Do not inject yet" not in skills.context("draft")
+    assert not skills.match("draft")
+    assert skills.match("draft", include_inactive=True)[0].name == "draft_skill"
+    assert skills.set_status("Draft Skill", "active", reason="reviewed")
+    assert "Do not inject yet" in skills.context("draft")
+    assert skills.set_status("Draft Skill", "disabled", reason="bad guidance")
+    assert "Do not inject yet" not in skills.context("draft")
+    audit = skills.audit()
+    assert audit["inactive"] >= 1
+    assert audit["active"] >= 1
+    assert draft.exists()
+    with pytest.raises(ValueError, match="invalid skill status"):
+        skills.set_status("Trace Guard", "bad")
 
 
 def test_context_store_caps_searches_and_compacts(tmp_path):
@@ -259,25 +305,74 @@ def test_trace_recorder_emits_metrics_and_alerts(tmp_path):
             "reason": "Denied dangerous pattern",
             "redactions": ["command"],
             "audit_tags": ["dangerous_command"],
+            "audit": True,
+        },
+    )
+    tracer.event(
+        "tool_call",
+        {
+            "tool": "python_exec",
+            "ok": False,
+            "latency_ms": 25,
+            "output": "Python failed",
+            "result_data": {"rollback": {"restored": 1, "removed": 1, "skipped": []}},
         },
     )
     tracer.event("tool_call", {"tool": "mcp_call", "ok": False, "latency_ms": 25, "output": "MCP request timed out"})
+    tracer.event(
+        "tool_call",
+        {
+            "tool": "mcp_health",
+            "ok": False,
+            "latency_ms": 10,
+            "output": "health failed",
+            "result_data": {"health": [{"server": "demo", "status": "error", "tool_count": 0, "cached": False, "latency_ms": 10, "error": "boom"}]},
+        },
+    )
+    tracer.event(
+        "tool_call",
+        {
+            "tool": "collaborate",
+            "ok": True,
+            "latency_ms": 20,
+            "output": "multi",
+            "result_data": {
+                "multi_agent": {
+                    "run_id": "multi_test",
+                    "status": "completed_with_fallbacks",
+                    "roles": ["planner"],
+                    "errors": ["planner: llm down"],
+                    "results": [{"role": "planner", "status": "failed_fallback", "fallback": True, "latency_ms": 7, "error": "llm down"}],
+                }
+            },
+        },
+    )
     tracer.event("tool_error", {"tool": "mcp_call", "error": "MCP request timed out"})
     tracer.event("artifact_error", {"tool": "write_file", "error": "digest mismatch"})
+    tracer.event("llm_response", {"model": "demo", "latency_ms": 42, "attempts": 3, "retries": 2})
     tracer.end("done")
 
     names = [record.name for record in sink.recent_metrics()]
     assert "policy.decision" in names
+    assert "policy.audit" in names
     assert "policy.denied" in names
     assert "redaction.hit" in names
     assert "tool.call" in names
     assert "tool.latency_ms" in names
     assert "tool.failure" in names
+    assert "sandbox.rollback" in names
     assert "tool.error" in names
+    assert "mcp.health" in names
+    assert "mcp.error" in names
+    assert "multi_agent.run" in names
+    assert "multi_agent.role" in names
+    assert "multi_agent.fallback" in names
     assert "mcp.timeout" in names
     assert "artifact.error" in names
+    assert "llm.latency_ms" in names
+    assert "llm.retry" in names
     alert_rules = {alert.rule for alert in sink.recent_alerts()}
-    assert {"policy-denied-any", "tool-failure-any", "tool-error-any", "mcp-timeout-any", "artifact-error-any"} <= alert_rules
+    assert {"policy-denied-any", "tool-failure-any", "tool-error-any", "mcp-timeout-any", "mcp-error-any", "artifact-error-any", "sandbox-rollback-any", "llm-retry-any", "multi-agent-fallback-any"} <= alert_rules
 
 
 def test_eval_evolution_analyzer_reads_failures(tmp_path):

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from evolva.agent.core import EvolvaAgent
+from evolva.storage import atomic_write_json
 from evolva.tools.base import ToolResult
 
 
@@ -16,6 +18,20 @@ class WorkflowResult:
     ok: bool
     outputs: dict[str, Any] = field(default_factory=dict)
     logs: list[str] = field(default_factory=list)
+    run_id: str = ""
+    status: str = ""
+    path: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "workflow_id": self.workflow_id,
+            "ok": self.ok,
+            "outputs": self.outputs,
+            "logs": self.logs,
+            "run_id": self.run_id,
+            "status": self.status,
+            "path": self.path,
+        }
 
 
 class WorkflowEngine:
@@ -23,24 +39,38 @@ class WorkflowEngine:
 
     def __init__(self, agent: EvolvaAgent):
         self.agent = agent
+        self.runs_dir = self.agent.config.workflows_dir / "runs"
+        self.runs_dir.mkdir(parents=True, exist_ok=True)
 
-    def run_file(self, path: Path) -> WorkflowResult:
+    def run_file(self, path: Path, *, resume: bool = False) -> WorkflowResult:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return self.run(data)
+        return self.run(data, resume=resume)
 
-    def run(self, spec: dict[str, Any]) -> WorkflowResult:
+    def run(self, spec: dict[str, Any], *, resume: bool = False) -> WorkflowResult:
         workflow_id = str(spec.get("id") or time.strftime("workflow_%Y%m%d_%H%M%S"))
+        run_id = time.strftime("workflow_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
+        fingerprint = self._fingerprint(spec)
         outputs: dict[str, Any] = {}
         logs: list[str] = []
         try:
             nodes = self._normalize_nodes(spec.get("nodes", []))
             execution_order = self._topological_order(nodes)
         except ValueError as exc:
-            return WorkflowResult(workflow_id, False, {}, [f"Workflow planning error: {exc}"])
+            result = WorkflowResult(workflow_id, False, {}, [f"Workflow planning error: {exc}"], run_id=run_id, status="planning_failed")
+            return self._persist(result, spec=spec, fingerprint=fingerprint)
+        resume_outputs = self._resume_outputs(workflow_id, fingerprint, nodes) if resume else {}
+        if resume_outputs:
+            outputs.update(resume_outputs)
+            logs.append(f"[resume] reused nodes={','.join(sorted(resume_outputs))}")
         for node_id in execution_order:
             node = nodes[node_id]
             kind = node.get("type", "agent")
             deps = node.get("depends_on", [])
+            if node_id in resume_outputs:
+                dep_text = ",".join(deps) if deps else "none"
+                logs.append(f"[{node_id}/{kind}] depends_on={dep_text} ok=True resumed=True\n{outputs[node_id]}")
+                self._persist(WorkflowResult(workflow_id, False, outputs, logs, run_id=run_id, status="running"), spec=spec, fingerprint=fingerprint, nodes=nodes)
+                continue
             try:
                 if kind == "tool":
                     result = self._run_tool_node(node, outputs)
@@ -56,9 +86,10 @@ class WorkflowEngine:
             dep_text = ",".join(deps) if deps else "none"
             logs.append(f"[{node_id}/{kind}] depends_on={dep_text} ok={result.ok}\n{result.output}")
             self.agent.context.add("artifact", f"Workflow {workflow_id} node {node_id} ok={result.ok}\n{result.output[:1000]}")
+            self._persist(WorkflowResult(workflow_id, result.ok, outputs, logs, run_id=run_id, status="running" if result.ok else "failed"), spec=spec, fingerprint=fingerprint, nodes=nodes)
             if not result.ok and not node.get("continue_on_error", False):
-                return WorkflowResult(workflow_id, False, outputs, logs)
-        return WorkflowResult(workflow_id, True, outputs, logs)
+                return self._persist(WorkflowResult(workflow_id, False, outputs, logs, run_id=run_id, status="failed"), spec=spec, fingerprint=fingerprint, nodes=nodes)
+        return self._persist(WorkflowResult(workflow_id, True, outputs, logs, run_id=run_id, status="completed"), spec=spec, fingerprint=fingerprint, nodes=nodes)
 
     def _normalize_nodes(self, raw_nodes: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         """Normalize node IDs and dependencies while preserving sequential specs.
@@ -140,3 +171,65 @@ class WorkflowEngine:
         if isinstance(value, dict):
             return {k: self._render(v, outputs) for k, v in value.items()}
         return value
+
+    def _persist(
+        self,
+        result: WorkflowResult,
+        *,
+        spec: dict[str, Any],
+        fingerprint: str,
+        nodes: dict[str, dict[str, Any]] | None = None,
+    ) -> WorkflowResult:
+        path = self.runs_dir / f"{result.run_id}.json"
+        result.path = str(path)
+        payload = {
+            **result.to_dict(),
+            "spec_fingerprint": fingerprint,
+            "node_fingerprints": {node_id: self._fingerprint(node) for node_id, node in (nodes or {}).items()},
+            "spec": spec,
+            "updated_at": time.time(),
+        }
+        atomic_write_json(path, payload)
+        return result
+
+    def _resume_outputs(self, workflow_id: str, fingerprint: str, nodes: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        latest = self._latest_run(workflow_id, fingerprint)
+        if not latest:
+            return {}
+        node_fingerprints = latest.get("node_fingerprints", {})
+        outputs = latest.get("outputs", {})
+        reusable: dict[str, Any] = {}
+        for node_id, output in outputs.items():
+            node = nodes.get(node_id)
+            if not node:
+                continue
+            if node_fingerprints.get(node_id) != self._fingerprint(node):
+                continue
+            deps = node.get("depends_on", [])
+            if all(dep in reusable for dep in deps):
+                reusable[node_id] = output
+        return reusable
+
+    def _latest_run(self, workflow_id: str, fingerprint: str) -> dict[str, Any] | None:
+        latest: dict[str, Any] | None = None
+        latest_updated = 0.0
+        for path in self.runs_dir.glob("workflow_*.json"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if data.get("workflow_id") != workflow_id:
+                continue
+            if data.get("status") not in {"failed", "running", "completed"}:
+                continue
+            updated = float(data.get("updated_at", 0.0))
+            if updated >= latest_updated:
+                latest = {**data, "path": str(path)}
+                latest_updated = updated
+        return latest
+
+    def _fingerprint(self, value: Any) -> str:
+        rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+        import hashlib
+
+        return hashlib.sha256(rendered.encode("utf-8")).hexdigest()

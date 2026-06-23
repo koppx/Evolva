@@ -43,6 +43,7 @@ skip_covered = true
 target-version = "py310"
 line-length = 160
 extend-exclude = [
+  ".evolva",
   "evolva/context",
   "evolva/memory",
   "evolva/todo",

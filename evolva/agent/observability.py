@@ -64,7 +64,11 @@ DEFAULT_ALERT_RULES = [
     AlertRule("tool-failure-any", "tool.failure", description="A tool call returned ok=false."),
     AlertRule("tool-error-any", "tool.error", severity="critical", description="A tool raised an unhandled exception."),
     AlertRule("mcp-timeout-any", "mcp.timeout", severity="critical", description="An MCP request timed out."),
+    AlertRule("mcp-error-any", "mcp.error", severity="warning", description="An MCP health check failed without a usable cache."),
     AlertRule("artifact-error-any", "artifact.error", description="Artifact provenance recording failed."),
+    AlertRule("sandbox-rollback-any", "sandbox.rollback", severity="warning", description="A failed shell/Python execution rolled back file changes."),
+    AlertRule("llm-retry-any", "llm.retry", severity="warning", description="An LLM request required a retry."),
+    AlertRule("multi-agent-fallback-any", "multi_agent.fallback", severity="warning", description="A role agent used fallback output."),
 ]
 
 

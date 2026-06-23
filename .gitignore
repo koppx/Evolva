@@ -17,6 +17,7 @@ htmlcov/
 .DS_Store
 
 # Local Evolva runtime state
+.evolva/
 evolva/context/
 evolva/memory/
 evolva/todo/

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -103,13 +104,24 @@ class EvolvaLangGraphRuntime:
         )
         self.agent.tracer.event("prompt", {"message_count": len(messages), "scratch_chars": len(scratch), "system_chars": len(messages[0]["content"])})
         timeout = int(state.get("llm_timeout") or getattr(self.agent.config, "request_timeout", 180))
+        started = time.time()
         try:
-            raw = self.agent.llm.chat(messages, timeout=timeout).content
+            response = self.agent.llm.chat(messages, timeout=timeout)
         except TypeError as exc:
             if "timeout" not in str(exc):
                 raise
-            raw = self.agent.llm.chat(messages).content
-        self.agent.tracer.event("llm_response", {"raw": raw[:4000]})
+            response = self.agent.llm.chat(messages)
+        raw = response.content
+        self.agent.tracer.event(
+            "llm_response",
+            {
+                "raw": raw[:4000],
+                "latency_ms": int((time.time() - started) * 1000),
+                "attempts": getattr(response, "attempts", 1),
+                "retries": getattr(response, "retries", 0),
+                "model": getattr(self.agent.config, "model", ""),
+            },
+        )
         action = extract_json_object(raw)
         if not action:
             return {"step": step, "final": raw.strip(), "route": "persist", "last_action": None}

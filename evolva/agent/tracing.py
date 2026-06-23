@@ -238,6 +238,8 @@ class TraceRecorder:
                 tags = {"tool": data.get("tool", ""), "risk": data.get("risk", ""), "allowed": str(allowed).lower()}
                 fields = {"reason": data.get("reason", ""), "audit_tags": data.get("audit_tags", [])}
                 self.observability.record("policy.decision", tags=tags, fields=fields)
+                if data.get("audit"):
+                    self.observability.record("policy.audit", tags={"tool": data.get("tool", ""), "risk": data.get("risk", "")}, fields=fields)
                 if not allowed:
                     self.observability.record("policy.denied", tags={key: value for key, value in tags.items() if key != "allowed"}, fields=fields)
                 redactions = data.get("redactions", []) or []
@@ -250,9 +252,59 @@ class TraceRecorder:
                 latency = data.get("latency_ms")
                 if latency is not None:
                     self.observability.record("tool.latency_ms", value=float(latency), unit="ms", tags=tags)
+                result_data = data.get("result_data") or {}
+                if isinstance(result_data, dict) and isinstance(result_data.get("health"), list):
+                    for row in result_data["health"]:
+                        if not isinstance(row, dict):
+                            continue
+                        status = str(row.get("status", "unknown"))
+                        health_tags = {
+                            "server": str(row.get("server", "")),
+                            "status": status,
+                            "cached": str(bool(row.get("cached", False))).lower(),
+                        }
+                        fields = {
+                            "latency_ms": row.get("latency_ms", 0),
+                            "cache_age_seconds": row.get("cache_age_seconds"),
+                            "error": str(row.get("error", ""))[:1000],
+                        }
+                        self.observability.record("mcp.health", value=float(row.get("tool_count") or 0), tags=health_tags, fields=fields)
+                        if status == "error":
+                            self.observability.record("mcp.error", tags={"server": health_tags["server"]}, fields=fields)
+                if isinstance(result_data, dict) and isinstance(result_data.get("multi_agent"), dict):
+                    report = result_data["multi_agent"]
+                    self.observability.record(
+                        "multi_agent.run",
+                        tags={"status": str(report.get("status", ""))},
+                        fields={"run_id": report.get("run_id", ""), "roles": report.get("roles", []), "errors": report.get("errors", [])},
+                    )
+                    for row in report.get("results", []) if isinstance(report.get("results"), list) else []:
+                        if not isinstance(row, dict):
+                            continue
+                        role_tags = {"role": str(row.get("role", "")), "status": str(row.get("status", "")), "fallback": str(bool(row.get("fallback", False))).lower()}
+                        self.observability.record("multi_agent.role", value=float(row.get("latency_ms") or 0), unit="ms", tags=role_tags, fields={"error": str(row.get("error", ""))[:1000]})
+                        if row.get("fallback"):
+                            self.observability.record("multi_agent.fallback", tags={"role": role_tags["role"], "status": role_tags["status"]}, fields={"error": str(row.get("error", ""))[:1000]})
+                if isinstance(result_data, dict) and isinstance(result_data.get("delegate"), dict):
+                    row = result_data["delegate"]
+                    role_tags = {"role": str(row.get("role", "")), "status": str(row.get("status", "")), "fallback": str(bool(row.get("fallback", False))).lower()}
+                    self.observability.record("multi_agent.role", value=float(row.get("latency_ms") or 0), unit="ms", tags=role_tags, fields={"error": str(row.get("error", ""))[:1000]})
+                    if row.get("fallback"):
+                        self.observability.record("multi_agent.fallback", tags={"role": role_tags["role"], "status": role_tags["status"]}, fields={"error": str(row.get("error", ""))[:1000]})
                 if not ok:
                     output = str(data.get("output", ""))
                     self.observability.record("tool.failure", tags={"tool": data.get("tool", "")}, fields={"output": output[:1000]})
+                    if isinstance(result_data, dict) and "rollback" in result_data:
+                        rollback = result_data.get("rollback") or {}
+                        self.observability.record(
+                            "sandbox.rollback",
+                            tags={"tool": data.get("tool", "")},
+                            fields={
+                                "restored": rollback.get("restored", 0),
+                                "removed": rollback.get("removed", 0),
+                                "skipped": rollback.get("skipped", []),
+                            },
+                        )
                     if "mcp request timed out" in output.lower():
                         self.observability.record("mcp.timeout", tags={"tool": data.get("tool", "")}, fields={"output": output[:1000]})
             elif event.kind == "tool_error":
@@ -262,6 +314,14 @@ class TraceRecorder:
                     self.observability.record("mcp.timeout", tags={"tool": data.get("tool", "")}, fields={"error": error[:1000]})
             elif event.kind == "artifact_error":
                 self.observability.record("artifact.error", tags={"tool": data.get("tool", "")}, fields={"error": str(data.get("error", ""))[:1000]})
+            elif event.kind == "llm_response":
+                tags = {"model": data.get("model", "")}
+                latency = data.get("latency_ms")
+                if latency is not None:
+                    self.observability.record("llm.latency_ms", value=float(latency), unit="ms", tags=tags)
+                retries = int(data.get("retries") or 0)
+                if retries > 0:
+                    self.observability.record("llm.retry", value=retries, tags=tags, fields={"attempts": data.get("attempts", 1)})
         except Exception:
             return
 

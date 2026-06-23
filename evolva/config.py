@@ -8,12 +8,24 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LOCAL_RUNTIME_CONFIG_FILE = ROOT / "evolva" / "runtime" / "config.json"
+RUNTIME_HOME_ENV = "EVOLVA_RUNTIME_HOME"
 
-LLM_CONFIG_KEYS = {"api_key", "model", "base_url", "temperature", "request_timeout"}
+LLM_CONFIG_KEYS = {"api_key", "model", "base_url", "temperature", "request_timeout", "llm_retry_backoff", "memory_context_min_confidence"}
 
 
-def load_runtime_config(path: Path = LOCAL_RUNTIME_CONFIG_FILE) -> dict[str, Any]:
+def default_runtime_home(root: Path = ROOT) -> Path:
+    raw = os.getenv(RUNTIME_HOME_ENV)
+    if raw:
+        candidate = Path(raw).expanduser()
+        return candidate if candidate.is_absolute() else (root / candidate).resolve()
+    return root / ".evolva"
+
+
+def default_runtime_path(*parts: str, root: Path = ROOT) -> Path:
+    return default_runtime_home(root) / Path(*parts)
+
+
+def load_runtime_config(path: Path | None = None) -> dict[str, Any]:
     """Load local, git-ignored Evolva runtime settings.
 
     The file is intentionally separate from tracked project configuration so a
@@ -21,6 +33,7 @@ def load_runtime_config(path: Path = LOCAL_RUNTIME_CONFIG_FILE) -> dict[str, Any
     vars or risking a commit of secrets.
     """
 
+    path = path or default_runtime_path("runtime", "config.json")
     if os.getenv("EVOLVA_DISABLE_RUNTIME_CONFIG") == "1":
         return {}
     if not path.exists():
@@ -32,9 +45,10 @@ def load_runtime_config(path: Path = LOCAL_RUNTIME_CONFIG_FILE) -> dict[str, Any
     return data if isinstance(data, dict) else {}
 
 
-def save_runtime_config(updates: dict[str, Any], path: Path = LOCAL_RUNTIME_CONFIG_FILE) -> dict[str, Any]:
+def save_runtime_config(updates: dict[str, Any], path: Path | None = None) -> dict[str, Any]:
     """Persist allowed local runtime settings with owner-only permissions."""
 
+    path = path or default_runtime_path("runtime", "config.json")
     data = load_runtime_config(path)
     for key, value in updates.items():
         if key not in LLM_CONFIG_KEYS or value is None:
@@ -49,9 +63,10 @@ def save_runtime_config(updates: dict[str, Any], path: Path = LOCAL_RUNTIME_CONF
     return data
 
 
-def remove_runtime_config_keys(keys: list[str], path: Path = LOCAL_RUNTIME_CONFIG_FILE) -> dict[str, Any]:
+def remove_runtime_config_keys(keys: list[str], path: Path | None = None) -> dict[str, Any]:
     """Remove selected keys from the local runtime settings file."""
 
+    path = path or default_runtime_path("runtime", "config.json")
     data = load_runtime_config(path)
     for key in keys:
         data.pop(key, None)
@@ -96,6 +111,21 @@ def _runtime_int(env_name: str, default: int) -> int:
         return default
 
 
+def _runtime_int_value(key: str, env_name: str, default: int) -> int:
+    raw = _runtime_value(key, env_name, str(default))
+    try:
+        return int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _runtime_paths(env_name: str) -> tuple[Path, ...]:
+    raw = os.getenv(env_name, "").strip()
+    if not raw:
+        return ()
+    return tuple(Path(item).expanduser() for item in raw.split(os.pathsep) if item.strip())
+
+
 def mask_secret(value: str | None) -> str:
     """Return a safe display form for secrets."""
 
@@ -109,23 +139,26 @@ def mask_secret(value: str | None) -> str:
 @dataclass(frozen=True)
 class AgentConfig:
     root: Path = ROOT
-    workspace: Path = ROOT / "evolva" / "workspace"
-    memory_file: Path = ROOT / "evolva" / "memory" / "memory.jsonl"
-    skills_dir: Path = ROOT / "evolva" / "skills"
-    context_file: Path = ROOT / "evolva" / "context" / "context.json"
-    todo_file: Path = ROOT / "evolva" / "todo" / "todos.json"
-    traces_dir: Path = ROOT / "evolva" / "traces"
-    metrics_file: Path = ROOT / "evolva" / "metrics" / "metrics.jsonl"
-    alerts_file: Path = ROOT / "evolva" / "metrics" / "alerts.jsonl"
-    artifacts_file: Path = ROOT / "evolva" / "artifacts" / "manifest.jsonl"
-    eval_results_dir: Path = ROOT / "evolva" / "eval_results"
-    dreams_dir: Path = ROOT / "evolva" / "dreams"
-    workflows_dir: Path = ROOT / "evolva" / "workflows"
-    loops_dir: Path = ROOT / "evolva" / "loops"
-    loop_runs_dir: Path = ROOT / "evolva" / "loop_runs"
-    runtime_config_file: Path = LOCAL_RUNTIME_CONFIG_FILE
-    mcp_config_file: Path = ROOT / "evolva" / "mcp" / "servers.json"
-    repo_index_file: Path = ROOT / "evolva" / "repo_index" / "index.json"
+    runtime_home: Path = field(default_factory=default_runtime_home)
+    workspace: Path = field(default_factory=lambda: default_runtime_path("workspace"))
+    memory_file: Path = field(default_factory=lambda: default_runtime_path("memory", "memory.jsonl"))
+    skills_dir: Path = field(default_factory=lambda: default_runtime_path("skills"))
+    context_file: Path = field(default_factory=lambda: default_runtime_path("context", "context.json"))
+    todo_file: Path = field(default_factory=lambda: default_runtime_path("todo", "todos.json"))
+    traces_dir: Path = field(default_factory=lambda: default_runtime_path("traces"))
+    metrics_file: Path = field(default_factory=lambda: default_runtime_path("metrics", "metrics.jsonl"))
+    alerts_file: Path = field(default_factory=lambda: default_runtime_path("metrics", "alerts.jsonl"))
+    artifacts_file: Path = field(default_factory=lambda: default_runtime_path("artifacts", "manifest.jsonl"))
+    policy_audit_file: Path = field(default_factory=lambda: default_runtime_path("policy", "audit.jsonl"))
+    eval_results_dir: Path = field(default_factory=lambda: default_runtime_path("eval_results"))
+    dreams_dir: Path = field(default_factory=lambda: default_runtime_path("dreams"))
+    workflows_dir: Path = field(default_factory=lambda: default_runtime_path("workflows"))
+    loops_dir: Path = field(default_factory=lambda: default_runtime_path("loops"))
+    loop_runs_dir: Path = field(default_factory=lambda: default_runtime_path("loop_runs"))
+    runtime_config_file: Path = field(default_factory=lambda: default_runtime_path("runtime", "config.json"))
+    mcp_config_file: Path = field(default_factory=lambda: default_runtime_path("mcp", "servers.json"))
+    mcp_tools_cache_file: Path = field(default_factory=lambda: default_runtime_path("mcp", "tools-cache.json"))
+    repo_index_file: Path = field(default_factory=lambda: default_runtime_path("repo_index", "index.json"))
     sandbox_allow_shell: bool = os.getenv("EVOLVA_SANDBOX_ALLOW_SHELL", "1") != "0"
     sandbox_backend: str = os.getenv("EVOLVA_SANDBOX_BACKEND", "local")
     sandbox_container_image: str = os.getenv("EVOLVA_SANDBOX_CONTAINER_IMAGE", "python:3.12-slim")
@@ -135,28 +168,56 @@ class AgentConfig:
     sandbox_container_cpus: str = os.getenv("EVOLVA_SANDBOX_CONTAINER_CPUS", "1")
     sandbox_container_pids_limit: int = _runtime_int("EVOLVA_SANDBOX_CONTAINER_PIDS_LIMIT", 128)
     sandbox_container_user: str = os.getenv("EVOLVA_SANDBOX_CONTAINER_USER", "")
+    sandbox_writable_roots: tuple[Path, ...] = field(default_factory=lambda: _runtime_paths("EVOLVA_SANDBOX_WRITABLE_ROOTS"))
+    sandbox_rollback_on_failure: bool = field(default_factory=lambda: _runtime_bool("EVOLVA_SANDBOX_ROLLBACK_ON_FAILURE", True))
+    sandbox_snapshot_roots: tuple[Path, ...] = field(default_factory=lambda: _runtime_paths("EVOLVA_SANDBOX_SNAPSHOT_ROOTS"))
+    sandbox_max_snapshot_bytes: int = field(default_factory=lambda: _runtime_int("EVOLVA_SANDBOX_MAX_SNAPSHOT_BYTES", 5_000_000))
     tracing_enabled: bool = os.getenv("EVOLVA_TRACING", "1") != "0"
     observability_enabled: bool = os.getenv("EVOLVA_OBSERVABILITY", "1") != "0"
+    policy_file: Path | None = field(default_factory=lambda: Path(os.environ["EVOLVA_POLICY_FILE"]).expanduser() if os.getenv("EVOLVA_POLICY_FILE") else None)
     profile: str = os.getenv("EVOLVA_PROFILE", "dev")
     model: str = field(default_factory=lambda: _runtime_value("model", "OPENAI_MODEL", "gpt-4o-mini") or "gpt-4o-mini")
     api_key: str | None = field(default_factory=lambda: _runtime_value("api_key", "OPENAI_API_KEY", None))
     base_url: str = field(default_factory=lambda: _runtime_value("base_url", "OPENAI_BASE_URL", "https://api.openai.com/v1") or "https://api.openai.com/v1")
     temperature: float = field(default_factory=lambda: _runtime_float("temperature", "OPENAI_TEMPERATURE", 0.2))
-    request_timeout: int = int(os.getenv("OPENAI_REQUEST_TIMEOUT", "180"))
+    request_timeout: int = field(default_factory=lambda: _runtime_int_value("request_timeout", "OPENAI_REQUEST_TIMEOUT", 180))
+    llm_max_retries: int = field(default_factory=lambda: _runtime_int("EVOLVA_LLM_MAX_RETRIES", 2))
+    llm_retry_backoff: float = field(default_factory=lambda: _runtime_float("llm_retry_backoff", "EVOLVA_LLM_RETRY_BACKOFF", 0.25))
+    mcp_tools_cache_ttl: int = field(default_factory=lambda: _runtime_int("EVOLVA_MCP_TOOLS_CACHE_TTL", 300))
+    memory_context_min_confidence: float = field(default_factory=lambda: _runtime_float("memory_context_min_confidence", "EVOLVA_MEMORY_CONTEXT_MIN_CONFIDENCE", 0.5))
+    multi_agent_max_roles: int = field(default_factory=lambda: _runtime_int("EVOLVA_MULTI_AGENT_MAX_ROLES", 4))
+    multi_agent_tool_steps: int = field(default_factory=lambda: _runtime_int("EVOLVA_MULTI_AGENT_TOOL_STEPS", 2))
+    dream_require_verification: bool = field(default_factory=lambda: _runtime_bool("EVOLVA_DREAM_REQUIRE_VERIFICATION", True))
     max_steps: int = int(os.getenv("EVOLVA_MAX_STEPS", "8"))
     auto_evolve: bool = os.getenv("EVOLVA_AUTO_EVOLVE", "1") != "0"
 
     def __post_init__(self) -> None:
-        # Keep backward-compatible tests/callers that construct a temp-root
-        # config without passing newly added paths.
-        if self.root != ROOT and self.artifacts_file == ROOT / "evolva" / "artifacts" / "manifest.jsonl":
-            object.__setattr__(self, "artifacts_file", self.root / "evolva" / "artifacts" / "manifest.jsonl")
-        if self.root != ROOT and self.metrics_file == ROOT / "evolva" / "metrics" / "metrics.jsonl":
-            object.__setattr__(self, "metrics_file", self.root / "evolva" / "metrics" / "metrics.jsonl")
-        if self.root != ROOT and self.alerts_file == ROOT / "evolva" / "metrics" / "alerts.jsonl":
-            object.__setattr__(self, "alerts_file", self.root / "evolva" / "metrics" / "alerts.jsonl")
-        if self.root != ROOT and self.runtime_config_file == LOCAL_RUNTIME_CONFIG_FILE:
-            object.__setattr__(self, "runtime_config_file", self.root / "evolva" / "runtime" / "config.json")
+        if self.root != ROOT and self.runtime_home == default_runtime_home(ROOT):
+            object.__setattr__(self, "runtime_home", default_runtime_home(self.root))
+        self._relocate_default_path("workspace", "workspace")
+        self._relocate_default_path("memory_file", "memory", "memory.jsonl")
+        self._relocate_default_path("skills_dir", "skills")
+        self._relocate_default_path("context_file", "context", "context.json")
+        self._relocate_default_path("todo_file", "todo", "todos.json")
+        self._relocate_default_path("traces_dir", "traces")
+        self._relocate_default_path("metrics_file", "metrics", "metrics.jsonl")
+        self._relocate_default_path("alerts_file", "metrics", "alerts.jsonl")
+        self._relocate_default_path("artifacts_file", "artifacts", "manifest.jsonl")
+        self._relocate_default_path("policy_audit_file", "policy", "audit.jsonl")
+        self._relocate_default_path("eval_results_dir", "eval_results")
+        self._relocate_default_path("dreams_dir", "dreams")
+        self._relocate_default_path("workflows_dir", "workflows")
+        self._relocate_default_path("loops_dir", "loops")
+        self._relocate_default_path("loop_runs_dir", "loop_runs")
+        self._relocate_default_path("runtime_config_file", "runtime", "config.json")
+        self._relocate_default_path("mcp_config_file", "mcp", "servers.json")
+        self._relocate_default_path("mcp_tools_cache_file", "mcp", "tools-cache.json")
+        self._relocate_default_path("repo_index_file", "repo_index", "index.json")
+
+    def _relocate_default_path(self, attr: str, *parts: str) -> None:
+        current = getattr(self, attr)
+        if current == default_runtime_path(*parts, root=ROOT):
+            object.__setattr__(self, attr, Path(self.runtime_home) / Path(*parts))
 
     def ensure_dirs(self) -> None:
         self.workspace.mkdir(parents=True, exist_ok=True)
@@ -168,6 +229,7 @@ class AgentConfig:
         self.metrics_file.parent.mkdir(parents=True, exist_ok=True)
         self.alerts_file.parent.mkdir(parents=True, exist_ok=True)
         self.artifacts_file.parent.mkdir(parents=True, exist_ok=True)
+        self.policy_audit_file.parent.mkdir(parents=True, exist_ok=True)
         self.eval_results_dir.mkdir(parents=True, exist_ok=True)
         self.dreams_dir.mkdir(parents=True, exist_ok=True)
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
@@ -175,4 +237,5 @@ class AgentConfig:
         self.loop_runs_dir.mkdir(parents=True, exist_ok=True)
         self.runtime_config_file.parent.mkdir(parents=True, exist_ok=True)
         self.mcp_config_file.parent.mkdir(parents=True, exist_ok=True)
+        self.mcp_tools_cache_file.parent.mkdir(parents=True, exist_ok=True)
         self.repo_index_file.parent.mkdir(parents=True, exist_ok=True)

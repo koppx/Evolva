@@ -58,6 +58,7 @@ Inside the TUI, use Slash Commands:
 ```text
 /model gpt-4o-mini
 /repo build
+/repo status
 /repo search evolution
 /mcp add filesystem npx -y @modelcontextprotocol/server-filesystem .
 /mcp tools filesystem
@@ -67,6 +68,8 @@ Inside the TUI, use Slash Commands:
 ```
 
 Even without `OPENAI_API_KEY`, Evolva can run local tools, memory, skills, todo, traces, workflows, and evals for local validation and extension.
+
+Runtime state is isolated from the Python package by default. Provider config, memory, context, todo, traces, metrics, artifacts, eval results, MCP server config, and repo index files live under `.evolva/`; set `EVOLVA_RUNTIME_HOME` to place them elsewhere.
 
 ## Positioning
 
@@ -85,8 +88,8 @@ Evolva is a composable, observable, and continuously improving Agent Harness. It
 | **LangGraph Runtime** | Explicit `StateGraph` nodes: `prepare -> llm -> tool -> observe -> persist -> auto_evolve` | `evolva/agent/langgraph_runtime.py` |
 | **TUI Workbench** | Default product entry for chat, tool logs, Trace, model switching, MCP, Workflow, and Self-Evolution | `evolva` |
 | **Tools** | File, shell, Python, web, todo, memory, context, policy, MCP, delegation | `/tools` / `/run` |
-| **Repo Index** | Local semantic repository index for symbols, references, paths, and code chunks | `/repo build` / `/repo search` |
-| **Memory / Skills** | Long-term facts, preferences, lessons, Markdown playbooks | `/memory` / `/skills` |
+| **Repo Index** | Local semantic repository index with file manifests, incremental reuse, stale detection, and skipped-file diagnostics | `/repo build` / `/repo status` / `/repo search` |
+| **Memory / Skills** | Long-term facts, preferences, lessons, and Markdown playbooks with evidence/status governance | `/memory` / `/skills` |
 | **MCP** | Add stdio MCP servers inside the TUI with `/mcp add`, then inspect/call tools via `/mcp tools` and `mcp_call` | `/mcp` |
 | **Workflow** | JSON workflow specs with role agents, agent calls, and tool nodes, launched from the TUI | `/workflow` |
 | **Trace / Replay** | Prompts, tool calls, policy decisions, latency, errors, outputs, inspectable in the TUI | `/trace` |
@@ -126,7 +129,7 @@ Candidate + Verifier
         ↓
 Dream Backlog
         ↓
-Staged Promotion
+Verified Promotion
         ↓
 Long-term Memory / Markdown Skill
 ```
@@ -140,13 +143,15 @@ TUI examples:
 /evolve apply-trace
 /evolve apply-eval
 /dream
+/dream status
 /dream backlog
 /dream apply --min-confidence 0.8
+/dream verify --promote
 ```
 
 The resulting lessons include **category / confidence / evidence / fingerprint**, are persisted in memory, and can be materialized as Markdown skills for future context injection. `evolve audit` summarizes lesson coverage, evolved skills, pending Trace/Eval proposals, and recommended next steps.
 
-`dream` is Evolva's local self-evolution research loop. It scans recent traces, the latest eval report, and current Memory/Skill coverage, then runs **Evidence → Hypothesis → Candidate → Verifier → Promotion**. Accepted hypotheses become `DreamCandidate` records with affected surfaces, risk, proposed change, and verifier metadata, then land in `evolva/dreams/backlog.json` as an improvement backlog. With `apply`, only high-confidence candidates pass through staged promotion into Memory / Skill, while `/dream verify` can run Eval or Trace verifiers for regression confirmation and advance passing candidates to verified/promoted.
+`dream` is Evolva's local self-evolution research loop. It scans recent traces, the latest eval report, and current Memory/Skill coverage, then runs **Evidence → Hypothesis → Candidate → Verifier → Promotion**. Accepted hypotheses become `DreamCandidate` records with affected surfaces, risk, proposed change, and verifier metadata, then land in the runtime home, by default `.evolva/dreams/backlog.json`, as an improvement backlog. By default, `/dream apply` stages high-confidence candidates for verifier review but does not write Memory / Skill. Durable promotion happens through `/dream verify --promote` after local Eval, Trace, or manual verifiers pass. Set `EVOLVA_DREAM_REQUIRE_VERIFICATION=0` only when you intentionally want the legacy immediate-apply behavior.
 
 ## TUI Workbench
 
@@ -161,18 +166,22 @@ Common TUI flows:
 ```text
 /model [name]                         Show/switch model
 /repo build                           Build repository index
+/repo status                          Show index freshness and skipped-file diagnostics
 /repo search <query>                  Search code symbols, references, and chunks
 /mcp                                  List configured MCP servers
 /mcp add <name> <command> [args...]   Add a stdio MCP server
 /mcp tools [server]                   List MCP tools
+/mcp health [server]                  Check MCP health and schema cache
 /run mcp_call {"server":"...","tool":"...","arguments":{}}
 /trace list                           List recent runs
 /trace context latest                 Inspect latest context/prompt events
 /workflow <json>                      Run a workflow spec
 /evolve audit                         Inspect self-evolution coverage
 /dream --min-confidence 0.8           Run Dreaming quality-gate analysis
+/dream status                         Show Dream gate and promotion status
 /dream backlog                        Show staged Dream improvement candidates
 /dream verify                         Run candidate verifiers
+/dream verify --promote               Promote passing candidates to Memory / Skill
 ```
 
 <details>
@@ -204,10 +213,12 @@ Common TUI flows:
 /image <path|url> [text]  Ask with an image
 /evolve [feedback]        Turn feedback into memory + skill
 /dream                    Run a Dreaming quality-gate report
+/dream status             Show Dream gate and promotion status
 /dream backlog            Show staged Dream improvement candidates
 /dream verify             Run candidate verifiers
+/dream verify --promote   Promote passing candidates to Memory / Skill
 /dream --min-confidence n  Tune the drift-guard confidence threshold
-/dream apply              Apply high-confidence Dreaming proposals
+/dream apply              Stage high-confidence Dreaming candidates
 /workflow <json>          Run a workflow spec
 /run <tool> <json>        Call a tool directly
 /exit                     Quit
@@ -216,6 +227,16 @@ Common TUI flows:
 </details>
 
 ## Workflow Example
+
+Workflow is the low-level DAG execution format. Each run persists status, node outputs, and errors under the runtime home; resume can reuse successful unchanged nodes by fingerprint so a long DAG does not need to restart from zero after a late failure.
+
+MCP tool discovery persists server schemas in `mcp/tools-cache.json` under the runtime home. If a server is temporarily unavailable, Evolva can degrade to the cached schema. `/mcp health [server]` and `evolva mcp health` report status, tool count, latency, cache age, and errors, and emit `mcp.health` / `mcp.error` metrics.
+
+Memory / Skill governance separates historical retention from prompt injection. Memory is injected only when it is `active` and meets `EVOLVA_MEMORY_CONTEXT_MIN_CONFIDENCE`; `draft`, `quarantined`, and `rolled_back` items remain auditable but do not influence agent behavior. Skills are injected only when their manifest status is `active`; `draft`, `disabled`, `deprecated`, and `quarantined` skills remain traceable but are not selected automatically. Governance tools include `memory_status`, `memory_audit`, `skill_status`, and `skill_audit`.
+
+Repo Index builds persist a file manifest, chunk counts, reused-file counts, and skipped-file reasons. Search checks the manifest for staleness, rebuilds only changed files, and reuses unchanged chunks. Runtime artifact directories such as `.evolva/`, legacy `evolva/*` state, and test runtime layouts are ignored so Trace, Memory, and Policy audit writes do not invalidate code search.
+
+Multi-agent is a governed role-collaboration layer, not an unbounded autonomous cluster. `delegate_agent` / `collaborate` validate roles, de-duplicate roles, respect `EVOLVA_MULTI_AGENT_MAX_ROLES`, and return structured reports with `run_id`, per-role status, latency, fallback, error details, and `tool_calls`. Sub-agents can call tools from their role allowlist, but every call goes through the main agent's Policy / approval / Sandbox / Trace path. Defaults are intentionally conservative: planner can inspect status, memory, and todos; researcher can read files and search the repo index; coder and reviewer can read/search plus run governed `python_exec`. `EVOLVA_MULTI_AGENT_TOOL_STEPS` controls per-role tool steps. File writes, shell, MCP calls, and recursive delegation are not in the default sub-agent scope. Failed LLM calls degrade to local fallback output and emit `multi_agent.run`, `multi_agent.role`, and `multi_agent.fallback` metrics.
 
 ```json
 {
@@ -264,14 +285,20 @@ TUI supports common workstation shortcuts:
 Evolva is local-first and can execute file, shell, and Python operations, so it ships with multiple guardrails by default:
 
 - **Sandbox root**: file tools resolve paths through the workspace sandbox to prevent path escape.
+- **Sandbox backend**: local workspace execution is the default; Docker backend can enforce network, read-only root, CPU, memory, and pids limits.
+- **Writable roots**: set `EVOLVA_SANDBOX_WRITABLE_ROOTS` to narrow writable paths, for example to only allow `.evolva/workspace`.
+- **Failure rollback**: failed shell / Python executions roll back files under snapshot roots. Tune with `EVOLVA_SANDBOX_SNAPSHOT_ROOTS` and `EVOLVA_SANDBOX_MAX_SNAPSHOT_BYTES`.
 - **Dangerous command denylist**: blocks patterns such as `rm -rf /`, `git reset --hard`, `mkfs`, and `shutdown`.
-- **Policy engine**: scores shell / Python, network, path, and secret-pattern risks.
+- **Policy engine**: scores shell / Python, network, path, and secret-pattern risks. Set `EVOLVA_POLICY_FILE` to load profile rules, denied capabilities, and command denylists.
+- **Policy audit**: decisions are written to `policy/audit.jsonl` under runtime home, by default `.evolva/policy/audit.jsonl`, so tool allow/deny/confirmation decisions are reviewable.
 - **Confirmation gate**: shell, Python, and MCP tools can require approval unless `--yes` is set.
 - **Trace audit**: decisions, tool calls, failures, and final answers are persisted for review.
 
 ## Development
 
 Evolva checks can be wired into CI to protect the Trace / Eval / Self-Evolution regression baseline.
+
+Security evals verify policy audit rows, MCP timeout metrics, sandbox rollback metrics, and secret redaction so production safety signals remain regression-tested.
 
 ```bash
 PYTHONPYCACHEPREFIX=.pycache python3 -m compileall evolva tests

@@ -199,11 +199,14 @@ class MCPClient:
 
 
 class MCPManager:
-    def __init__(self, config_file: Path, *, root: Path):
+    def __init__(self, config_file: Path, *, root: Path, tool_cache_file: Path | None = None, tool_cache_ttl: int = 300):
         self.config_file = config_file
         self.root = root
+        self.tool_cache_file = tool_cache_file or config_file.with_name("tools-cache.json")
+        self.tool_cache_ttl = max(0, int(tool_cache_ttl))
         self.clients: dict[str, MCPClient] = {}
         self.servers = self.load_configs(config_file)
+        self._tool_cache: dict[str, Any] = self._load_tool_cache()
 
     def load_configs(self, path: Path) -> dict[str, MCPServerConfig]:
         if not path.exists():
@@ -280,6 +283,7 @@ class MCPManager:
         if name in self.clients:
             self.clients[name].close()
             self.clients.pop(name, None)
+        self._drop_tool_cache(name)
         return config
 
     def remove_server(self, name: str) -> bool:
@@ -294,6 +298,7 @@ class MCPManager:
             self.clients[name].close()
             self.clients.pop(name, None)
         self.servers.pop(name, None)
+        self._drop_tool_cache(name)
         return existed
 
     def client(self, server: str) -> MCPClient:
@@ -303,11 +308,12 @@ class MCPManager:
             self.clients[server] = MCPClient(self.servers[server], root=self.root)
         return self.clients[server]
 
-    def list_tools(self, server: str | None = None) -> list[dict[str, Any]]:
+    def list_tools(self, server: str | None = None, *, refresh: bool = False, use_cache: bool = True) -> list[dict[str, Any]]:
         names = [server] if server else self.list_servers()
         rows: list[dict[str, Any]] = []
         for name in names:
-            for tool in self.client(name).list_tools():
+            tools, _, _ = self._tools_for_server(name, refresh=refresh, use_cache=use_cache)
+            for tool in tools:
                 tool = dict(tool)
                 tool["server"] = name
                 rows.append(tool)
@@ -316,10 +322,72 @@ class MCPManager:
     def call_tool(self, server: str, tool: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         return self.client(server).call_tool(tool, arguments)
 
+    def health(self, server: str | None = None, *, refresh: bool = False) -> list[dict[str, Any]]:
+        names = [server] if server else self.list_servers()
+        rows: list[dict[str, Any]] = []
+        now = time.time()
+        for name in names:
+            if name not in self.servers:
+                rows.append({"server": name, "status": "error", "error": f"Unknown MCP server: {name}", "tool_count": 0, "cached": False})
+                continue
+            started = time.monotonic()
+            tools: list[dict[str, Any]] = []
+            cached = False
+            error = ""
+            try:
+                tools, cached, error = self._tools_for_server(name, refresh=refresh, use_cache=not refresh)
+            except Exception as exc:
+                error = str(exc)
+            latency_ms = int((time.monotonic() - started) * 1000)
+            cache_entry = self._cache_entry(name)
+            cache_age = int(now - float(cache_entry.get("fetched_at", now))) if cache_entry else None
+            if error and tools:
+                status = "degraded"
+            elif error:
+                status = "error"
+            elif cached:
+                status = "cached"
+            else:
+                status = "ok"
+            config = self.servers[name]
+            rows.append(
+                {
+                    "server": name,
+                    "status": status,
+                    "tool_count": len(tools),
+                    "cached": cached,
+                    "cache_age_seconds": cache_age,
+                    "latency_ms": latency_ms,
+                    "request_timeout": config.request_timeout,
+                    "max_message_bytes": config.max_message_bytes,
+                    "error": error,
+                }
+            )
+        return rows
+
     def close(self) -> None:
         for client in self.clients.values():
             client.close()
         self.clients.clear()
+
+    def _tools_for_server(self, name: str, *, refresh: bool, use_cache: bool) -> tuple[list[dict[str, Any]], bool, str]:
+        if name not in self.servers:
+            raise KeyError(f"Unknown MCP server: {name}")
+        if use_cache and not refresh:
+            cached = self._cached_tools(name)
+            if cached is not None:
+                return cached, True, ""
+        try:
+            tools = [dict(tool) for tool in self.client(name).list_tools()]
+            self._update_tool_cache(name, tools=tools, status="ok", error="")
+            return tools, False, ""
+        except Exception as exc:
+            error = str(exc)
+            self._update_tool_cache(name, tools=None, status="error", error=error)
+            cached = self._cached_tools(name, allow_stale=True)
+            if cached is not None:
+                return cached, True, error
+            raise
 
     def _raw_config(self) -> dict[str, Any]:
         if not self.config_file.exists():
@@ -331,6 +399,52 @@ class MCPManager:
 
     def _write_config(self, data: dict[str, Any]) -> None:
         atomic_write_json(self.config_file, data)
+
+    def _load_tool_cache(self) -> dict[str, Any]:
+        data = read_json(self.tool_cache_file, {"servers": {}})
+        if not isinstance(data, dict):
+            return {"servers": {}}
+        servers = data.get("servers")
+        if not isinstance(servers, dict):
+            data["servers"] = {}
+        return data
+
+    def _write_tool_cache(self) -> None:
+        atomic_write_json(self.tool_cache_file, self._tool_cache)
+
+    def _cache_entry(self, name: str) -> dict[str, Any]:
+        servers = self._tool_cache.setdefault("servers", {})
+        entry = servers.get(name)
+        return entry if isinstance(entry, dict) else {}
+
+    def _cached_tools(self, name: str, *, allow_stale: bool = False) -> list[dict[str, Any]] | None:
+        entry = self._cache_entry(name)
+        tools = entry.get("tools")
+        if not isinstance(tools, list):
+            return None
+        fetched_at = float(entry.get("fetched_at") or 0)
+        if not allow_stale and self.tool_cache_ttl > 0 and time.time() - fetched_at > self.tool_cache_ttl:
+            return None
+        return [dict(tool) for tool in tools if isinstance(tool, dict)]
+
+    def _update_tool_cache(self, name: str, *, tools: list[dict[str, Any]] | None, status: str, error: str) -> None:
+        servers = self._tool_cache.setdefault("servers", {})
+        entry = servers.get(name) if isinstance(servers.get(name), dict) else {}
+        next_entry = dict(entry)
+        if tools is not None:
+            next_entry["tools"] = [dict(tool) for tool in tools]
+            next_entry["fetched_at"] = time.time()
+        next_entry["status"] = status
+        next_entry["last_error"] = error
+        next_entry["updated_at"] = time.time()
+        servers[name] = next_entry
+        self._write_tool_cache()
+
+    def _drop_tool_cache(self, name: str) -> None:
+        servers = self._tool_cache.setdefault("servers", {})
+        if name in servers:
+            servers.pop(name, None)
+            self._write_tool_cache()
 
 
 def render_mcp_result(result: dict[str, Any]) -> str:

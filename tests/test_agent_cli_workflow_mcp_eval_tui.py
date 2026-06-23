@@ -6,10 +6,12 @@ import threading
 import time
 from argparse import Namespace
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
 from evolva.agent.core import EvolvaAgent, SYSTEM_PROMPT
+from evolva.agent.llm import LLMResponse
 from evolva.agent.mcp import MCPClient, MCPManager, MCPServerConfig, render_mcp_result
 from evolva.agent.tracing import TraceRecorder
 from evolva.cli import build_parser, dream_cmd, evolve_cmd, handle_command, loop_cmd, main, mcp_cmd, metrics_cmd, once, optimize_cmd, sandbox_cmd
@@ -127,6 +129,99 @@ def test_multi_agent_roles_fallback_and_errors(temp_config):
         coord.delegate("planner", " ")
 
 
+def test_multi_agent_reports_budget_and_llm_failure_fallback(temp_config):
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+    coord = agent.coordinator
+    coord.max_roles_per_run = 2
+    report = coord.collaborate_report("ship safely", roles=["planner", "planner", "reviewer"])
+    assert report.status == "completed"
+    assert report.roles == ["planner", "reviewer"]
+    assert report.results[0].fallback
+    assert report.run_id.startswith("multi_")
+    assert "Multi-agent run" in report.render()
+
+    with pytest.raises(ValueError, match="too many roles"):
+        coord.collaborate_report("ship", roles=["planner", "researcher", "coder"])
+    with pytest.raises(KeyError):
+        coord.collaborate_report("ship", roles=["missing"])
+
+    class FailingLLM:
+        available = True
+
+        def chat(self, messages, **kwargs):
+            raise RuntimeError("llm down")
+
+    coord.llm = FailingLLM()
+    failed = coord.delegate_report("reviewer", "review")
+    assert not failed.ok
+    assert failed.fallback
+    assert failed.status == "failed_fallback"
+    assert "llm down" in failed.error
+
+
+def test_sub_agent_can_call_allowed_tools_through_governed_runner(temp_config):
+    (temp_config.root / "brief.md").write_text("production notes", encoding="utf-8")
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+
+    class ToolCallingLLM:
+        available = True
+
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return LLMResponse(
+                    content=json.dumps(
+                        {
+                            "thought": "Need to inspect the file.",
+                            "tool": {"name": "read_file", "args": {"path": "brief.md"}},
+                            "final": None,
+                        }
+                    )
+                )
+            assert "production notes" in messages[-1]["content"]
+            return LLMResponse(content=json.dumps({"thought": "Enough evidence.", "tool": None, "final": "Found production notes."}))
+
+    agent.coordinator.llm = ToolCallingLLM()
+    result = agent.coordinator.delegate_report("researcher", "inspect brief")
+
+    assert result.ok
+    assert result.status == "completed"
+    assert result.output == "Found production notes."
+    assert result.tool_calls[0]["tool"] == "read_file"
+    assert result.tool_calls[0]["ok"] is True
+
+
+def test_sub_agent_rejects_tools_outside_role_scope(temp_config):
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+
+    class WriteAttemptLLM:
+        available = True
+
+        def chat(self, messages, **kwargs):
+            return LLMResponse(
+                content=json.dumps(
+                    {
+                        "thought": "Try an unsafe write.",
+                        "tool": {"name": "write_file", "args": {"path": "denied.txt", "content": "nope"}},
+                        "final": None,
+                    }
+                )
+            )
+
+    agent.coordinator.llm = WriteAttemptLLM()
+    result = agent.coordinator.delegate_report("researcher", "write a file")
+
+    assert not result.ok
+    assert result.status == "tool_denied"
+    assert "not allowed" in result.error
+    assert result.tool_calls[0]["tool"] == "write_file"
+    assert result.tool_calls[0]["status"] == "denied"
+    assert not (temp_config.root / "denied.txt").exists()
+
+
 def test_trace_recorder_list_load_render_disabled_and_path_sanitization(tmp_path):
     traces = TraceRecorder(tmp_path / "traces")
     run_id = traces.start("hello", meta={"a": 1})
@@ -196,6 +291,43 @@ def test_workflow_engine_runs_explicit_dag_and_rejects_cycles(temp_config):
     assert not missing.ok and "missing node" in missing.logs[0]
 
 
+def test_workflow_engine_persists_and_resumes_successful_nodes(temp_config):
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+    wf = WorkflowEngine(agent)
+    first = wf.run(
+        {
+            "id": "resume-wf",
+            "nodes": [
+                {"id": "write", "type": "tool", "tool": "write_file", "args": {"path": "evolva/workspace/resume.txt", "content": "resume-ok"}},
+                {"id": "bad", "type": "unknown"},
+            ],
+        }
+    )
+    assert not first.ok
+    assert first.status == "failed"
+    assert first.path and Path(first.path).exists()
+
+    resumed = wf.run(
+        {
+            "id": "resume-wf",
+            "nodes": [
+                {"id": "write", "type": "tool", "tool": "write_file", "args": {"path": "evolva/workspace/resume.txt", "content": "resume-ok"}},
+                {"id": "read", "type": "tool", "tool": "read_file", "args": {"path": "evolva/workspace/resume.txt"}},
+            ],
+        },
+        resume=True,
+    )
+
+    assert resumed.ok
+    assert resumed.status == "completed"
+    assert "[resume] reused nodes=write" in resumed.logs[0]
+    assert "resumed=True" in "\n".join(resumed.logs)
+    assert resumed.outputs["read"] == "resume-ok"
+    data = json.loads(Path(resumed.path).read_text(encoding="utf-8"))
+    assert data["status"] == "completed"
+    assert data["outputs"]["write"].startswith("Wrote")
+
+
 def test_eval_harness_score_summary_report_and_run_file(temp_config, tmp_path):
     harness = EvalHarness(temp_config, assume_yes=True)
     harness.agent.memory.add("fact", "Eval remembers memory state")
@@ -206,6 +338,8 @@ def test_eval_harness_score_summary_report_and_run_file(temp_config, tmp_path):
     corrupt = temp_config.workspace / "state.json.corrupt.1"
     corrupt.write_text("{bad json", encoding="utf-8")
     harness.agent.observability.record("mcp.timeout", tags={"tool": "mcp_tools"})
+    harness.agent.observability.record("sandbox.rollback", tags={"tool": "python_exec"}, fields={"restored": 1, "removed": 1})
+    harness.agent.policy.check_tool("shell", {"command": "rm -rf /"})
     report = harness.score_report(
         {
             "expected_contains": ["ok"],
@@ -216,7 +350,11 @@ def test_eval_harness_score_summary_report_and_run_file(temp_config, tmp_path):
             "expected_artifact_contains": [{"path": "evolva/workspace/out.txt", "contains": ["artifact"]}],
             "expected_memory": ["memory state"],
             "expected_context": ["context state"],
-            "expected_metrics": [{"name": "mcp.timeout", "tags": {"tool": "mcp_tools"}}],
+            "expected_metrics": [
+                {"name": "mcp.timeout", "tags": {"tool": "mcp_tools"}},
+                {"name": "sandbox.rollback", "tags": {"tool": "python_exec"}, "fields": {"restored": 1, "removed": 1}},
+            ],
+            "expected_policy_audit": [{"tool": "shell", "allowed": False, "risk": "critical", "audit_tags": ["dangerous_command"]}],
             "max_duration_ms": 500,
             "scorers": ["no_tool_error"],
         },
@@ -235,6 +373,8 @@ def test_eval_harness_score_summary_report_and_run_file(temp_config, tmp_path):
     assert checks["memory:memory state"]
     assert checks["context:context state"]
     assert checks["metric:mcp.timeout"]
+    assert checks["metric:sandbox.rollback"]
+    assert checks["policy_audit:shell"]
     assert checks["duration<=500ms"]
     assert checks["no_tool_error"]
     assert report.dimensions()["artifact"] < 1.0
@@ -300,6 +440,40 @@ def test_mcp_manager_config_render_and_fake_client(monkeypatch, tmp_path):
         MCPManager(tmp_path / "missing.json", root=tmp_path).client("missing")
 
 
+def test_mcp_manager_tool_cache_and_health(monkeypatch, tmp_path):
+    cfg = tmp_path / "servers.json"
+    cache = tmp_path / "tools-cache.json"
+    cfg.write_text(json.dumps({"servers": {"demo": {"command": "python3", "args": ["s.py"]}}}))
+    manager = MCPManager(cfg, root=tmp_path, tool_cache_file=cache, tool_cache_ttl=600)
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = 0
+
+        def list_tools(self):
+            self.calls += 1
+            return [{"name": "ping", "description": "Ping"}]
+
+    fake = FakeClient()
+    monkeypatch.setattr(manager, "client", lambda server: fake)
+    rows = manager.list_tools()
+    assert rows == [{"name": "ping", "description": "Ping", "server": "demo"}]
+    assert fake.calls == 1
+    assert json.loads(cache.read_text())["servers"]["demo"]["status"] == "ok"
+
+    class FailingClient:
+        def list_tools(self):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(manager, "client", lambda server: FailingClient())
+    assert manager.list_tools() == rows
+    health = manager.health("demo", refresh=True)
+    assert health[0]["status"] == "degraded"
+    assert health[0]["cached"] is True
+    assert health[0]["tool_count"] == 1
+    assert "boom" in health[0]["error"]
+
+
 def test_mcp_client_framing_with_fake_process(tmp_path):
     client = MCPClient(MCPServerConfig("demo", "cmd"), root=tmp_path)
     written = []
@@ -358,6 +532,8 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     chat_args = parser.parse_args(["--chat", "--yes"])
     assert chat_args.cmd is None and chat_args.chat and chat_args.yes
     assert parser.parse_args(["mcp", "call", "s", "t", "{}", "--yes"]).mcp_cmd == "call"
+    parsed_mcp_health = parser.parse_args(["mcp", "health", "s", "--refresh", "--yes"])
+    assert parsed_mcp_health.mcp_cmd == "health" and parsed_mcp_health.refresh is True
     assert parser.parse_args(["metrics", "prometheus"]).metrics_cmd == "prometheus"
     assert parser.parse_args(["sandbox", "smoke", "--timeout", "3"]).sandbox_cmd == "smoke"
     parsed_eval = parser.parse_args(["eval", "evals/tasks/smoke.jsonl", "--baseline", "evals/baselines/smoke.json", "--min-score", "1.0", "--no-regression"])
@@ -410,11 +586,11 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
     agent.tracer.event("prompt", {"message_count": 1})
     agent.tracer.end("ok")
     agent.observability.record("policy.denied", tags={"tool": "shell", "risk": "critical"})
-    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/metrics", "/metrics alerts", "/metrics prometheus", "/sandbox", "/sandbox smoke", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp add cli-demo python3 server.py --flag", "/mcp remove cli-demo", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/dream", "/dream backlog", "/dream verify", "/dream apply --limit 2 --min-confidence 0.8", "/loop list", "/loop show dream-loop", "/workflow", "/run sandbox_info {}", "/unknown"]:
+    for line in ["/help", "/tools", "/skills", "/memory", "/memory stats", "/memory recent 2", "/memory search cli", "/context", "/todo", "/todo add task", "/todo done 1", "/agents", "/trace list", f"/trace context {run_id}", "/metrics", "/metrics alerts", "/metrics prometheus", "/sandbox", "/sandbox smoke", "/model", "/model cli-test-model", "/policy", "/mcp", "/mcp add cli-demo python3 server.py --flag", "/mcp remove cli-demo", "/mcp tools", "/evolve feedback", "/evolve status", "/evolve audit", "/evolve trace", "/evolve apply-trace", "/evolve eval", "/dream", "/dream status", "/dream backlog", "/dream verify", "/dream apply --limit 2 --min-confidence 0.8", "/loop list", "/loop show dream-loop", "/workflow", "/run sandbox_info {}", "/unknown"]:
         assert handle_command(agent, line) is True
     assert handle_command(agent, "/exit") is False
     output = capsys.readouterr().out
-    assert "Commands:" in output and "Sandbox root" in output and "Evolution audit" in output and "Dream report" in output and "Evolution status" in output and "evolva_policy_denied_total" in output and "Unknown command" in output
+    assert "Commands:" in output and "Sandbox root" in output and "Evolution audit" in output and "Dream report" in output and "Dream status" in output and "Evolution status" in output and "evolva_policy_denied_total" in output and "Unknown command" in output
 
     assert metrics_cmd(Namespace(metrics_cmd="list", limit=5)) == 0
     assert "policy.denied" in capsys.readouterr().out
@@ -437,6 +613,7 @@ def test_cli_mcp_cmd_json_error_and_success(monkeypatch, capsys, temp_config):
     assert mcp_cmd(Namespace(mcp_cmd="remove", name="fs", yes=True)) == 0
     assert "Removed MCP server" in capsys.readouterr().out
     assert mcp_cmd(Namespace(mcp_cmd="call", server="s", tool="t", arguments="{", yes=True)) == 2
+    assert mcp_cmd(Namespace(mcp_cmd="health", server="", refresh=False, yes=True)) == 0
     assert "JSON error" in capsys.readouterr().out
 
 
@@ -530,6 +707,8 @@ def test_tui_non_curses_command_completion_queue_and_confirmation(monkeypatch, t
     assert any("Evolution analysis: trace" in m.text for m in app.messages)
     app._handle_command("/dream")
     assert any("Dream report" in m.text for m in app.messages)
+    app._handle_command("/dream status")
+    assert any("Dream status" in m.text for m in app.messages)
     app._handle_command("/dream backlog")
     assert any("Dream backlog" in m.text for m in app.messages)
     app._handle_command("/dream verify")

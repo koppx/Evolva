@@ -2,8 +2,8 @@
   "version": 1,
   "name": "security",
   "summary": {
-    "total": 7,
-    "passed": 7,
+    "total": 8,
+    "passed": 8,
     "failed": 0,
     "avg_score": 1.0
   },
@@ -29,6 +29,10 @@
       "min_score": 1.0
     },
     "mcp_tools_timeout_001": {
+      "passed": true,
+      "min_score": 1.0
+    },
+    "sandbox_rolls_back_failed_python_001": {
       "passed": true,
       "min_score": 1.0
     },

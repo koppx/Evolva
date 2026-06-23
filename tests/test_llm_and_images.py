@@ -139,6 +139,79 @@ def test_llm_chat_retries_without_temperature_when_provider_requires_default(mon
     assert "temperature" not in payloads[1]
 
 
+def test_llm_chat_retries_transient_http_errors(monkeypatch, temp_config):
+    cfg = temp_config.__class__(**{**temp_config.__dict__, "api_key": "sk-test", "llm_max_retries": 2, "llm_retry_backoff": 0})
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": "ok after retry"}}]}).encode()
+
+    class FakeHTTPError(urllib.error.HTTPError):
+        def read(self):
+            return b'{"error":"temporary"}'
+
+    def fake_urlopen(req, timeout):
+        calls.append(json.loads(req.data.decode()))
+        if len(calls) == 1:
+            raise FakeHTTPError(req.full_url, 500, "Server Error", {}, io.BytesIO())
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    resp = OpenAICompatibleLLM(cfg).chat([{"role": "user", "content": "hi"}])
+
+    assert resp.content == "ok after retry"
+    assert len(calls) == 2
+
+
+def test_llm_chat_does_not_retry_non_transient_http_errors(monkeypatch, temp_config):
+    cfg = temp_config.__class__(**{**temp_config.__dict__, "api_key": "sk-test", "llm_max_retries": 3, "llm_retry_backoff": 0})
+    calls = []
+
+    class FakeHTTPError(urllib.error.HTTPError):
+        def read(self):
+            return b'{"error":"bad auth"}'
+
+    def fake_urlopen(req, timeout):
+        calls.append(req.full_url)
+        raise FakeHTTPError(req.full_url, 401, "Unauthorized", {}, io.BytesIO())
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match="LLM HTTP 401"):
+        OpenAICompatibleLLM(cfg).chat([{"role": "user", "content": "hi"}])
+
+    assert len(calls) == 1
+
+
+def test_llm_chat_json_validates_required_keys(monkeypatch, temp_config):
+    cfg = temp_config.__class__(**{**temp_config.__dict__, "api_key": "sk-test"})
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": '```json\n{"final":"ok"}\n```'}}]}).encode()
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout: FakeResponse())
+
+    llm = OpenAICompatibleLLM(cfg)
+    assert llm.chat_json([{"role": "user", "content": "hi"}], required_keys=["final"]) == {"final": "ok"}
+    with pytest.raises(RuntimeError, match="missing required keys"):
+        llm.chat_json([{"role": "user", "content": "hi"}], required_keys=["tool"])
+
+
 def test_llm_chat_surfaces_http_error(monkeypatch, temp_config):
     cfg = temp_config.__class__(**{**temp_config.__dict__, "api_key": "sk-test"})
 

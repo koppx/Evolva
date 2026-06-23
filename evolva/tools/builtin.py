@@ -57,7 +57,10 @@ def build_registry(
         return ToolResult(True, text, {"path": str(p), "truncated": len(text) >= max_chars})
 
     def write_file(path: str, content: str, append: bool = False) -> ToolResult:
-        p = sandbox.resolve(path)
+        try:
+            p = sandbox.resolve_write(path)
+        except ValueError as exc:
+            return ToolResult(False, str(exc), {"path": path})
         p.parent.mkdir(parents=True, exist_ok=True)
         if append:
             with p.open("a", encoding="utf-8") as f:
@@ -109,21 +112,46 @@ def build_registry(
         context.add("artifact", f"Web search: {query}", meta={"results": rows[:max_results]})
         return ToolResult(True, json.dumps(rows, ensure_ascii=False, indent=2), rows)
 
-    def remember(kind: str, content: str, confidence: float = 0.7) -> ToolResult:
-        item = memory.add(kind, content, confidence=confidence, source="agent")
-        return ToolResult(True, f"Remembered [{item.kind}] {item.content}")
+    def remember(kind: str, content: str, confidence: float = 0.7, status: str = "active", evidence: list[str] | None = None) -> ToolResult:
+        item = memory.add(kind, content, confidence=confidence, source="agent", status=status, evidence=list(evidence or []))
+        return ToolResult(True, f"Remembered [{item.kind}/{item.confidence:.1f}/{item.status}] {item.content}", asdict(item))
 
     def recall(query: str = "") -> ToolResult:
         return ToolResult(True, memory.context(query))
 
+    def memory_status(item_id: str, status: str, reason: str = "manual governance") -> ToolResult:
+        changed = memory.update_status(item_id, status, reason=reason)
+        if not changed:
+            return ToolResult(False, f"Memory item `{item_id}` was not found")
+        return ToolResult(True, f"Memory item `{item_id}` marked {status}", {"id": item_id, "status": status, "reason": reason})
+
+    def memory_audit() -> ToolResult:
+        audit = memory.audit()
+        lines = ["Memory audit", *[f"- {key}: {value}" for key, value in sorted(audit.items())]]
+        return ToolResult(True, "\n".join(lines), audit)
+
     def list_skills() -> ToolResult:
-        names = [s.name for s in skills.list()]
+        names = [f"{s.name} [{(s.metadata or {}).get('status', 'active')}]" for s in skills.list()]
         return ToolResult(True, "\n".join(names), names)
 
-    def save_skill(name: str, content: str) -> ToolResult:
-        path = skills.upsert(name, content)
+    def save_skill(name: str, content: str, status: str = "active", triggers: list[str] | None = None, source: str = "agent") -> ToolResult:
+        metadata = {"status": status, "source": source}
+        if triggers:
+            metadata["triggers"] = list(triggers)
+        path = skills.upsert(name, content, metadata=metadata)
         context.add("artifact", f"Saved skill {path.name}", meta={"path": str(path)})
         return ToolResult(True, f"Saved skill: {path.name}")
+
+    def skill_status(name: str, status: str, reason: str = "manual governance") -> ToolResult:
+        changed = skills.set_status(name, status, reason=reason)
+        if not changed:
+            return ToolResult(False, f"Skill `{name}` was not found")
+        return ToolResult(True, f"Skill `{name}` marked {status}", {"name": name, "status": status, "reason": reason})
+
+    def skill_audit() -> ToolResult:
+        audit = skills.audit()
+        lines = ["Skill audit", *[f"- {key}: {value}" for key, value in sorted(audit.items())]]
+        return ToolResult(True, "\n".join(lines), audit)
 
     def context_add(kind: str, content: str, role: str = "agent") -> ToolResult:
         item = context.add(kind, content, role=role)
@@ -168,8 +196,9 @@ def build_registry(
     def repo_index_build(max_files: int = 1000) -> ToolResult:
         index = RepoIndex(sandbox.root, repo_index_file)
         snapshot = index.build(max_files=int(max_files))
-        output = f"Built repo index: {len(snapshot.chunks)} chunks backend={snapshot.backend}"
-        context.add("artifact", output, meta={"index_file": str(index.index_file), "chunks": len(snapshot.chunks)})
+        stats = snapshot.stats
+        output = f"Built repo index: {len(snapshot.chunks)} chunks, {stats.get('files', 0)} files, reused={stats.get('reused_files', 0)} backend={snapshot.backend}"
+        context.add("artifact", output, meta={"index_file": str(index.index_file), "chunks": len(snapshot.chunks), "stats": stats, "skipped": snapshot.skipped})
         return ToolResult(True, output, asdict(snapshot))
 
     def repo_index_search(query: str, limit: int = 8) -> ToolResult:
@@ -182,6 +211,29 @@ def build_registry(
         output = "\n".join(lines) or "No repo index matches"
         context.add("artifact", f"Repo index search `{query}` returned {len(rows)} chunks", meta={"query": query, "limit": limit})
         return ToolResult(True, output, [asdict(row) for row in rows])
+
+    def repo_index_status(max_files: int = 1000) -> ToolResult:
+        index = RepoIndex(sandbox.root, repo_index_file)
+        status = index.status(max_files=int(max_files))
+        if not status.get("exists"):
+            return ToolResult(True, f"Repo index missing: {status.get('index_file')}", status)
+        stats = status.get("stats") if isinstance(status.get("stats"), dict) else {}
+        skipped = status.get("skipped") if isinstance(status.get("skipped"), dict) else {}
+        lines = [
+            "Repo index status",
+            f"- index_file: {status.get('index_file')}",
+            f"- backend: {status.get('backend')}",
+            f"- stale: {status.get('stale')}",
+            f"- age_seconds: {status.get('age_seconds')}",
+            f"- chunks: {status.get('chunks')}",
+            f"- files: {status.get('files')}",
+            f"- indexed_files: {stats.get('indexed_files', 0)}",
+            f"- reused_files: {stats.get('reused_files', 0)}",
+            f"- skipped_files: {stats.get('skipped_files', 0)}",
+        ]
+        for key, value in sorted(skipped.items()):
+            lines.append(f"- skipped.{key}: {value}")
+        return ToolResult(True, "\n".join(lines), status)
 
     def mcp_servers() -> ToolResult:
         if mcp is None:
@@ -233,6 +285,21 @@ def build_registry(
             lines.append(f"- {item.get('server')}/{item.get('name')}: {item.get('description', '')}")
         return ToolResult(True, "\n".join(lines) or "No MCP tools", rows)
 
+    def mcp_health(server: str = "", refresh: bool = False) -> ToolResult:
+        if mcp is None:
+            return ToolResult(False, "MCP manager is not configured")
+        rows = mcp.health(server or None, refresh=bool(refresh))
+        lines = []
+        for item in rows:
+            detail = f"{item.get('tool_count', 0)} tools"
+            if item.get("cached"):
+                detail += ", cache"
+            if item.get("error"):
+                detail += f", error={item.get('error')}"
+            lines.append(f"- {item.get('server')}: {item.get('status')} ({detail})")
+        ok = all(item.get("status") in {"ok", "cached", "degraded"} for item in rows)
+        return ToolResult(ok, "\n".join(lines) or "No MCP servers configured", {"health": rows})
+
     def mcp_call(server: str, tool: str, arguments: dict | None = None) -> ToolResult:
         if mcp is None:
             return ToolResult(False, "MCP manager is not configured")
@@ -244,16 +311,18 @@ def build_registry(
     def delegate_agent(role: str, task: str, context_text: str = "") -> ToolResult:
         if coordinator is None:
             return ToolResult(False, "Multi-agent coordinator is not configured")
-        output = coordinator.delegate(role, task, context=context_text)
+        result = coordinator.delegate_report(role, task, context=context_text)
+        output = result.output
         context.add("note", f"Sub-agent {role} result for task `{task}`:\n{output}", role=role)
-        return ToolResult(True, output)
+        return ToolResult(result.ok, output, {"delegate": result.__dict__})
 
     def collaborate(task: str, roles: list[str] | None = None, context_text: str = "") -> ToolResult:
         if coordinator is None:
             return ToolResult(False, "Multi-agent coordinator is not configured")
-        output = coordinator.collaborate(task, roles=roles, context=context_text)
+        report = coordinator.collaborate_report(task, roles=roles, context=context_text)
+        output = report.render()
         context.add("note", f"Multi-agent collaboration for `{task}`:\n{output}")
-        return ToolResult(True, output)
+        return ToolResult(report.status in {"completed", "completed_with_fallbacks"}, output, {"multi_agent": report.to_dict()})
 
     def dream_report(limit: int = 20, apply: bool = False, verify: bool = False) -> ToolResult:
         if dream_runner is None:
@@ -267,10 +336,14 @@ def build_registry(
     reg.register(Tool("shell", "Run a shell command inside the sandbox", {"command": "str", "cwd": "str", "timeout": "int"}, shell, needs_confirmation=True, capabilities=caps("shell")))
     reg.register(Tool("python_exec", "Run a short Python snippet in a sandboxed subprocess", {"code": "str", "timeout": "int"}, python_exec, needs_confirmation=True, capabilities=caps("python_exec")))
     reg.register(Tool("web_search", "Search the web with DuckDuckGo HTML endpoint", {"query": "str", "max_results": "int"}, web_search, capabilities=caps("web_search")))
-    reg.register(Tool("remember", "Store a long-term memory item", {"kind": "str", "content": "str", "confidence": "float"}, remember, capabilities=caps("remember")))
+    reg.register(Tool("remember", "Store a governed long-term memory item", {"kind": "str", "content": "str", "confidence": "float", "status": "str", "evidence": "list[str]"}, remember, capabilities=caps("remember")))
     reg.register(Tool("recall", "Search long-term memory", {"query": "str"}, recall, capabilities=caps("recall")))
+    reg.register(Tool("memory_status", "Update a memory item's governance status", {"item_id": "str", "status": "str", "reason": "str"}, memory_status, capabilities=caps("memory_status")))
+    reg.register(Tool("memory_audit", "Summarize memory governance quality", {}, memory_audit, capabilities=caps("memory_audit")))
     reg.register(Tool("list_skills", "List available skills", {}, list_skills, capabilities=caps("list_skills")))
-    reg.register(Tool("save_skill", "Create or update a markdown skill", {"name": "str", "content": "str"}, save_skill, capabilities=caps("save_skill")))
+    reg.register(Tool("save_skill", "Create or update a governed markdown skill", {"name": "str", "content": "str", "status": "str", "triggers": "list[str]", "source": "str"}, save_skill, capabilities=caps("save_skill")))
+    reg.register(Tool("skill_status", "Update a skill's governance status", {"name": "str", "status": "str", "reason": "str"}, skill_status, capabilities=caps("skill_status")))
+    reg.register(Tool("skill_audit", "Summarize skill governance quality", {}, skill_audit, capabilities=caps("skill_audit")))
     reg.register(Tool("context_add", "Add a note, artifact, summary, decision, or message to persistent context", {"kind": "str", "content": "str", "role": "str"}, context_add, capabilities=caps("context_add")))
     reg.register(Tool("context_view", "View/search persistent context", {"query": "str", "limit": "int"}, context_view, capabilities=caps("context_view")))
     reg.register(Tool("context_compact", "Summarize recent context into a compact summary item", {"title": "str", "limit": "int"}, context_compact, capabilities=caps("context_compact")))
@@ -283,9 +356,11 @@ def build_registry(
     reg.register(Tool("policy_check", "Preview whether policy allows a tool call", {"tool_name": "str", "args": "dict"}, policy_check, capabilities=caps("policy_check")))
     reg.register(Tool("repo_index_build", "Build a local semantic repository index with symbol chunks", {"max_files": "int"}, repo_index_build, capabilities=caps("repo_index_build")))
     reg.register(Tool("repo_index_search", "Search repository symbols, references, paths, and code chunks", {"query": "str", "limit": "int"}, repo_index_search, capabilities=caps("repo_index_search")))
+    reg.register(Tool("repo_index_status", "Show repository index freshness, manifest, and skipped-file diagnostics", {"max_files": "int"}, repo_index_status, capabilities=caps("repo_index_status")))
     reg.register(Tool("mcp_servers", "List configured MCP servers", {}, mcp_servers, capabilities=caps("mcp_servers")))
     reg.register(Tool("mcp_add_server", "Persist a stdio MCP server config", {"name": "str", "command": "str", "args": "list[str]", "env": "dict", "cwd": "str", "request_timeout": "int", "max_message_bytes": "int"}, mcp_add_server, capabilities=caps("mcp_add_server")))
     reg.register(Tool("mcp_remove_server", "Remove a configured MCP server", {"name": "str"}, mcp_remove_server, capabilities=caps("mcp_remove_server")))
+    reg.register(Tool("mcp_health", "Check MCP server health, latency, tool count, and schema cache status", {"server": "str", "refresh": "bool"}, mcp_health, capabilities=caps("mcp_health")))
     reg.register(Tool("mcp_tools", "List tools from configured MCP servers", {"server": "str"}, mcp_tools, capabilities=caps("mcp_tools")))
     reg.register(Tool("mcp_call", "Call an MCP tool via stdio JSON-RPC", {"server": "str", "tool": "str", "arguments": "dict"}, mcp_call, needs_confirmation=True, capabilities=caps("mcp_call")))
     reg.register(Tool("delegate_agent", "Delegate a task to a role agent: planner, researcher, coder, reviewer", {"role": "str", "task": "str", "context_text": "str"}, delegate_agent, capabilities=caps("delegate_agent")))

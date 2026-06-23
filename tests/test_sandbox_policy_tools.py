@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 
 import pytest
@@ -11,6 +12,7 @@ from evolva.agent.policy import PolicyConfig, PolicyEngine
 from evolva.agent.sandbox import DockerWorkspaceBackend, Sandbox, SandboxPolicy, build_backend, parse_command
 from evolva.agent.skills import SkillStore
 from evolva.agent.todo import TodoStore
+from evolva.storage import read_jsonl
 from evolva.tools.base import Tool, ToolRegistry, ToolResult
 from evolva.tools.builtin import build_registry
 
@@ -53,6 +55,61 @@ def test_sandbox_shell_disabled_dangerous_timeout_and_python(tmp_path):
     assert smoke.ok
     assert "evolva-sandbox-ok" in smoke.output
     assert smoke.data["backend"] == "local"
+
+
+def test_sandbox_rolls_back_workspace_on_failed_python(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    existing = workspace / "state.txt"
+    existing.write_text("before", encoding="utf-8")
+    sandbox = Sandbox(SandboxPolicy(tmp_path, workspace))
+
+    result = sandbox.run_python(
+        "from pathlib import Path\n"
+        "Path('workspace/state.txt').write_text('after')\n"
+        "Path('workspace/new.txt').write_text('new')\n"
+        "raise SystemExit(3)"
+    )
+
+    assert not result.ok
+    assert "Rolled back sandbox snapshot" in result.output
+    assert existing.read_text(encoding="utf-8") == "before"
+    assert not (workspace / "new.txt").exists()
+    assert result.data["rollback"]["restored"] == 1
+    assert result.data["rollback"]["removed"] == 1
+
+
+def test_sandbox_keeps_workspace_changes_on_success(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    sandbox = Sandbox(SandboxPolicy(tmp_path, workspace))
+
+    result = sandbox.run_python("from pathlib import Path\nPath('workspace/success.txt').write_text('ok')")
+
+    assert result.ok
+    assert (workspace / "success.txt").read_text(encoding="utf-8") == "ok"
+    assert "rollback" not in result.data
+
+
+def test_sandbox_writable_roots_restrict_file_tools(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    sandbox = Sandbox(SandboxPolicy(tmp_path, workspace, writable_roots=(workspace,)))
+    assert sandbox.resolve_write("workspace/ok.txt") == (workspace / "ok.txt").resolve()
+    with pytest.raises(ValueError, match="outside sandbox writable roots"):
+        sandbox.resolve_write("outside.txt")
+
+    memory = MemoryStore(tmp_path / "memory.jsonl")
+    skills = SkillStore(tmp_path / "skills")
+    context = ContextStore(tmp_path / "context.json")
+    todos = TodoStore(tmp_path / "todos.json")
+    reg = build_registry(sandbox, memory, skills, context, todos)
+
+    assert reg.call("write_file", {"path": "workspace/ok.txt", "content": "ok"}).ok
+    denied = reg.call("write_file", {"path": "outside.txt", "content": "nope"})
+    assert not denied.ok
+    assert "outside sandbox writable roots" in denied.output
+    assert not (tmp_path / "outside.txt").exists()
 
 
 def test_parse_command_rejects_shell_control_operators(tmp_path):
@@ -178,6 +235,60 @@ def test_policy_profiles_deny_high_risk_capabilities(tmp_path):
     assert allowed.allowed and allowed.requires_confirmation
 
 
+def test_policy_custom_profile_rules_and_audit_log(tmp_path):
+    audit_file = tmp_path / "policy" / "audit.jsonl"
+    policy = PolicyEngine(
+        PolicyConfig(
+            root=tmp_path,
+            workspace=tmp_path / "workspace",
+            profile="ci",
+            audit_file=audit_file,
+            profile_rules={"ci": {"deny_capabilities": [Capability.WRITE_FILE.value], "network_enabled": False}},
+        )
+    )
+
+    denied = policy.check_tool("write_file", {"path": "a.txt", "content": "ok"}, capabilities=[Capability.WRITE_FILE.value])
+    network = policy.check_tool("web_search", {"query": "x"}, capabilities=[Capability.NETWORK.value])
+
+    assert not denied.allowed
+    assert "disabled in ci profile" in denied.reason
+    assert not network.allowed
+    rows = read_jsonl(audit_file)
+    assert [row["tool"] for row in rows] == ["write_file", "web_search"]
+    assert rows[0]["allowed"] is False
+    assert rows[0]["capabilities"] == [Capability.WRITE_FILE.value]
+    assert "profile_denied" in rows[0]["audit_tags"]
+    assert "content" not in rows[0]
+
+
+def test_policy_file_extends_profiles_and_patterns(tmp_path):
+    policy_file = tmp_path / "policy.json"
+    policy_file.write_text(
+        json.dumps(
+            {
+                "denied_shell_patterns": [r"\bcurl\b"],
+                "profiles": {
+                    "prod-lite": {
+                        "deny_capabilities": [Capability.MCP_CALL.value],
+                        "allow_shell": True,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    policy = PolicyEngine(PolicyConfig(root=tmp_path, workspace=tmp_path / "workspace", profile="prod-lite", policy_file=policy_file))
+
+    shell = policy.check_tool("shell", {"command": "curl https://example.com"}, capabilities=[Capability.RUN_COMMAND.value])
+    mcp = policy.check_tool("mcp_call", {"server": "x"}, capabilities=[Capability.MCP_CALL.value])
+
+    assert not shell.allowed and "Denied dangerous pattern" in shell.reason
+    assert not mcp.allowed and "disabled in prod-lite profile" in mcp.reason
+    info = policy.as_tool_result().output
+    assert f"policy_file={policy_file}" in info
+    assert "denied_shell_patterns=9" in info
+
+
 def test_tool_registry_register_get_call_describe_errors():
     reg = ToolRegistry()
     reg.register(Tool("ok", "demo", {"x": "int"}, lambda x: ToolResult(True, str(x))))
@@ -201,9 +312,17 @@ def test_builtin_file_memory_context_todo_and_policy_tools(tmp_path):
     assert not reg.call("read_file", {"path": "missing.txt"}).ok
 
     assert reg.call("remember", {"kind": "fact", "content": "pytest matters"}).ok
+    low = reg.call("remember", {"kind": "fact", "content": "low confidence note", "confidence": 0.1})
+    assert low.ok and "low confidence note" not in reg.call("recall", {"query": "confidence"}).output
     assert "pytest" in reg.call("recall", {"query": "pytest"}).output
+    assert "low_confidence_active" in reg.call("memory_audit", {}).output
+    assert reg.call("memory_status", {"item_id": low.data["id"], "status": "quarantined", "reason": "not verified"}).ok
     assert reg.call("save_skill", {"name": "Testing", "content": "Run pytest"}).ok
+    assert reg.call("save_skill", {"name": "Draft Testing", "content": "Do not inject", "status": "draft", "triggers": ["draft"]}).ok
     assert "testing" in reg.call("list_skills", {}).output
+    assert "Do not inject" not in reg.call("recall", {"query": "draft"}).output
+    assert "active_missing" in reg.call("skill_audit", {}).output
+    assert reg.call("skill_status", {"name": "Draft Testing", "status": "active", "reason": "reviewed"}).ok
     assert reg.call("context_add", {"kind": "note", "content": "note"}).ok
     assert "note" in reg.call("context_view", {"query": "note"}).output
     assert "Compacted" in reg.call("context_compact", {"title": "summary"}).output
@@ -223,5 +342,48 @@ def test_builtin_shell_python_policy_mcp_and_delegate_absent(tmp_path):
     assert not reg.call("mcp_call", {"server": "x", "tool": "y"}).ok
     assert not reg.call("delegate_agent", {"role": "planner", "task": "x"}).ok
     assert not reg.call("collaborate", {"task": "x"}).ok
+
+
+def test_builtin_multi_agent_tools_return_structured_reports(tmp_path):
+    class FallbackCoordinator:
+        def delegate_report(self, role, task, context=""):
+            from evolva.agent.multi_agent import AgentRoleResult
+
+            return AgentRoleResult(role=role, ok=True, output=f"{role}:{task}:{context}", status="fallback", latency_ms=1, fallback=True)
+
+        def collaborate_report(self, task, roles=None, context=""):
+            from evolva.agent.multi_agent import AgentRoleResult, MultiAgentRun
+
+            chosen = roles or ["planner"]
+            return MultiAgentRun(
+                run_id="multi_test",
+                task=task,
+                roles=chosen,
+                status="completed",
+                started_at=1,
+                ended_at=2,
+                max_roles=4,
+                results=[AgentRoleResult(role=chosen[0], ok=True, output="ok", status="fallback", latency_ms=1, fallback=True)],
+            )
+
+    reg, _ = make_registry(tmp_path)
+    # Rebuild with a coordinator because the default make_registry omits it.
+    from evolva.agent.context import ContextStore
+    from evolva.agent.memory import MemoryStore
+    from evolva.agent.sandbox import Sandbox, SandboxPolicy
+    from evolva.agent.skills import SkillStore
+    from evolva.agent.todo import TodoStore
+
+    sandbox = Sandbox(SandboxPolicy(tmp_path, tmp_path / "workspace"))
+    registry = build_registry(sandbox, MemoryStore(tmp_path / "m.jsonl"), SkillStore(tmp_path / "skills2"), ContextStore(tmp_path / "c.json"), TodoStore(tmp_path / "t.json"), FallbackCoordinator())
+
+    delegated = registry.call("delegate_agent", {"role": "planner", "task": "plan", "context_text": "ctx"})
+    assert delegated.ok
+    assert delegated.data["delegate"]["role"] == "planner"
+    assert delegated.data["delegate"]["tool_calls"] == []
+    collab = registry.call("collaborate", {"task": "ship", "roles": ["planner"], "context_text": "ctx"})
+    assert collab.ok
+    assert collab.data["multi_agent"]["run_id"] == "multi_test"
+    assert collab.data["multi_agent"]["results"][0]["tool_calls"] == []
     py = reg.call("python_exec", {"code": "print(2 + 3)"})
     assert py.ok and py.output == "5"

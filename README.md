@@ -85,7 +85,7 @@ F4                                     # 快速唤起配置入口
 /model                                 # 查看当前模型与 provider
 ```
 
-配置会保存到本地 `evolva/runtime/config.json`，该目录默认被 `.gitignore` 忽略；如果不配置模型，Evolva 仍可先以本地规则模式使用工具、记忆、Trace、Workflow、Eval 等能力。
+配置默认保存到本地 `.evolva/runtime/config.json`，`.evolva/` 会被 `.gitignore` 忽略；也可以用 `EVOLVA_RUNTIME_HOME` 指向独立的运行态目录。如果不配置模型，Evolva 仍可先以本地规则模式使用工具、记忆、Trace、Workflow、Eval 等能力。
 
 日常使用围绕 Slash Commands：
 
@@ -93,6 +93,7 @@ F4                                     # 快速唤起配置入口
 /config wizard                         # 配置模型与 AK
 /model <model>                         # 切换模型
 /repo build                             # 构建仓库索引
+/repo status                            # 查看索引新鲜度、文件 manifest 和 skipped 诊断
 /repo search evolution                  # 搜索代码符号/片段
 /mcp add filesystem npx -y @modelcontextprotocol/server-filesystem .
 /mcp tools filesystem                   # 查看 MCP tools
@@ -119,9 +120,9 @@ Evolva 的功能按真实使用路径组织：先让 Agent 看懂仓库，再安
 | **TUI Workbench** | 默认产品入口，集成对话、工具日志、Trace、模型切换、MCP、Workflow 与自我进化 | `evolva` |
 | **Loop Engineering** | 将重复任务抽象为可运行、可设 Gate、可回放、可进化的 Agent Loop | `/loop` |
 | **Tools** | 文件、Shell、Python、Web、Todo、Memory、Context、Policy、MCP、多 Agent 委派 | `/tools` / `/run` |
-| **Repo Index** | 本地语义仓库索引，按符号、引用、路径和代码片段检索 | `/repo build` / `/repo search` |
-| **Memory / Skills** | 带 evidence / status / version 的长期记忆，以及带 manifest trigger 的 Markdown playbook | `/memory` / `/skills` |
-| **MCP** | 在 TUI 内通过 `/mcp add` 接入 stdio MCP server，并用 `/mcp tools` / `mcp_call` 调用 | `/mcp` |
+| **Repo Index** | 本地语义仓库索引，带文件 manifest、增量复用、stale 检测和 skipped 诊断 | `/repo build` / `/repo status` / `/repo search` |
+| **Memory / Skills** | 带 evidence / status / version 的长期记忆，以及带 manifest trigger / status 的 Markdown playbook | `/memory` / `/skills` |
+| **MCP** | 在 TUI 内通过 `/mcp add` 接入 stdio MCP server，并用 `/mcp tools` / `/mcp health` / `mcp_call` 调用 | `/mcp` |
 | **Workflow** | JSON DAG 编排 role agent、agent call、tool node，支持依赖声明、循环检测与错误门控 | `evolva workflow` / Slash Command |
 | **Trace / Replay** | 记录 prompt、工具调用、policy 决策、耗时、错误与输出，TUI 内查看上下文 | `/trace` |
 | **Eval Harness** | JSONL 任务集 + baseline gate，覆盖文本、正则、产物、记忆、上下文和工具错误，适合 CI/回归 | CI / Regression |
@@ -279,7 +280,7 @@ Candidate + Verifier
         ↓
 Dream Backlog
         ↓
-Staged Promotion
+Verified Promotion
         ↓
 Long-term Memory / Markdown Skill
 ```
@@ -293,13 +294,15 @@ TUI 内示例：
 /evolve apply-trace
 /evolve apply-eval
 /dream
+/dream status
 /dream backlog
 /dream apply --min-confidence 0.8
+/dream verify --promote
 ```
 
 它会把反馈或失败模式提炼成带 **category / confidence / evidence / fingerprint** 的 lesson，写入长期记忆，并可生成 Markdown Skill。`evolve audit` 会列出 lesson 覆盖、已进化技能、Trace/Eval 待处理 proposal 和下一步建议，避免经验沉淀变成不可控的 prompt 堆叠。
 
-`dream` 会扫描最近 Trace、最新 Eval 报告和当前 Memory/Skill 覆盖，执行 **Evidence → Hypothesis → Candidate → Verifier → Promotion**。每个候选改进都会带上影响面、风险、建议动作和 verifier；只有通过质量门的高置信候选，才会被分阶段沉淀为 Memory / Skill。
+`dream` 会扫描最近 Trace、最新 Eval 报告和当前 Memory/Skill 覆盖，执行 **Evidence → Hypothesis → Candidate → Verifier → Promotion**。每个候选改进都会带上影响面、风险、建议动作和 verifier；默认情况下，`/dream apply` 只把高置信候选放入待验证状态，不直接写入 Memory / Skill。只有 `/dream verify --promote` 通过本地 Eval、Trace 或人工 verifier 后，候选才会被提升为长期 Memory / Skill。若需要兼容旧的立即写入行为，可以显式设置 `EVOLVA_DREAM_REQUIRE_VERIFICATION=0`。
 
 ## TUI 工作台入口
 
@@ -315,10 +318,12 @@ TUI 内常用路径：
 ```text
 /model [name]                         查看/切换模型
 /repo build                           构建仓库索引
+/repo status                          查看索引状态和 skipped 文件原因
 /repo search <query>                  搜索代码符号、引用和片段
 /mcp                                  查看已接入的 MCP server
 /mcp add <name> <command> [args...]   接入一个 stdio MCP server
 /mcp tools [server]                   查看 MCP tools
+/mcp health [server]                  查看 MCP 健康状态和 schema cache
 /run mcp_call {"server":"...","tool":"...","arguments":{}}
 /trace list                           查看最近运行
 /trace context latest                 查看最新上下文/Prompt 事件
@@ -329,8 +334,10 @@ TUI 内常用路径：
 /workflow path/to/workflow.json        运行 workflow spec
 /evolve audit                         查看自进化覆盖
 /dream --min-confidence 0.8           运行 Dreaming 质量门分析
+/dream status                         查看 Dream gate 与提升状态
 /dream backlog                        查看候选改进 Backlog
 /dream verify                         运行候选改进 Verifier
+/dream verify --promote               验证通过后提升为 Memory / Skill
 ```
 
 <details>
@@ -362,10 +369,12 @@ TUI 内常用路径：
 /image <path|url> [text]  对图片提问
 /evolve [feedback]        基于反馈自我进化
 /dream                    运行 Dreaming 质量门报告
+/dream status             查看 Dream gate 与提升状态
 /dream backlog            查看候选改进 Backlog
 /dream verify             运行候选改进 Verifier
+/dream verify --promote   验证通过后提升为 Memory / Skill
 /dream --min-confidence n 调整 drift-guard 置信阈值
-/dream apply              应用高置信 Dreaming 建议
+/dream apply              暂存高置信 Dreaming 候选，等待 verifier
 /loop list                查看 Agent Loops
 /loop show <loop>         查看 Loop spec
 /loop validate <loop>     运行前校验 Loop spec
@@ -379,7 +388,9 @@ TUI 内常用路径：
 
 ## Workflow 编排
 
-Workflow 是 Evolva 的底层 DAG 执行格式。它支持显式 `depends_on`，执行前会检查重复节点、缺失依赖和循环依赖；执行结果会进入 Context 与 Trace，作为后续 Eval / Dream 的证据来源。
+Workflow 是 Evolva 的底层 DAG 执行格式。它支持显式 `depends_on`，执行前会检查重复节点、缺失依赖和循环依赖；执行结果会进入 Context 与 Trace，作为后续 Eval / Dream 的证据来源。每次 Workflow 运行也会在 runtime home 下写入状态、节点输出和错误信息；失败后可用 resume 复用 fingerprint 未变化的成功节点，避免长 DAG 从头重跑。
+
+MCP 工具发现会把 server schema 缓存在 runtime home 下的 `mcp/tools-cache.json`；server 短暂不可用时可以降级复用已有 cache。`/mcp health [server]` / `evolva mcp health` 会输出状态、工具数量、延迟、cache 年龄和错误，并进入 `mcp.health` / `mcp.error` 指标。
 
 ```json
 {
@@ -403,9 +414,17 @@ evolva eval evals/tasks/smoke.jsonl --yes \
   --no-regression
 ```
 
-JSONL 任务不再绑定单一 checklist，而是进入可插拔 Scorer Registry：内置 `contains`、`not_contains`、`regex`、`artifact_exists`、`artifact_contains`、`artifact_manifest`、`json_match`、`memory_contains`、`context_contains`、`trace_event`、`trace_schema`、`tool_sequence`、`command`、`latency`、`no_tool_error` 等评测算子。每个 check 都会产出 dimension、weight、evidence、expected/actual，并汇总为 weighted score，便于业务方继续接入自定义 rule-based scorer 或 LLM-as-judge。baseline 位于 `evals/baselines/`，CI 配置位于 `.github/workflows/ci.yml`。
+JSONL 任务不再绑定单一 checklist，而是进入可插拔 Scorer Registry：内置 `contains`、`not_contains`、`regex`、`artifact_exists`、`artifact_contains`、`artifact_manifest`、`json_match`、`memory_contains`、`context_contains`、`trace_event`、`trace_schema`、`metric`、`policy_audit`、`tool_sequence`、`command`、`latency`、`no_tool_error` 等评测算子。每个 check 都会产出 dimension、weight、evidence、expected/actual，并汇总为 weighted score，便于业务方继续接入自定义 rule-based scorer 或 LLM-as-judge。baseline 位于 `evals/baselines/`，CI 配置位于 `.github/workflows/ci.yml`。
 
-Trace 与 artifact 也进入同一套回归体系：Evolva trace 使用 `trace.v1` schema，为每个事件分配 `event_id`、`span_id`、`parent_id`，方便 TUI/可视化层构建 timeline/DAG；写文件等产物会同步进入 `evolva/artifacts/manifest.jsonl`，记录 path、sha256、producer、run_id 与 event_id，让 Eval、Replay、Dream 能基于同一份可审计证据工作。
+Trace 与 artifact 也进入同一套回归体系：Evolva trace 使用 `trace.v1` schema，为每个事件分配 `event_id`、`span_id`、`parent_id`，方便 TUI/可视化层构建 timeline/DAG；写文件等产物会同步进入 runtime home 下的 `artifacts/manifest.jsonl`，默认是 `.evolva/artifacts/manifest.jsonl`，记录 path、sha256、producer、run_id 与 event_id，让 Eval、Replay、Dream 能基于同一份可审计证据工作。
+
+Security eval 会检查 policy audit、MCP timeout metric、sandbox rollback metric 和 secret redaction，确保安全能力不是只停留在日志里，而是进入 CI 可回归质量门。
+
+Memory / Skill 治理会把“历史留存”和“进入 prompt”分开：Memory 只有 `active` 且达到 `EVOLVA_MEMORY_CONTEXT_MIN_CONFIDENCE` 阈值时才会进入上下文；`draft`、`quarantined`、`rolled_back` 会保留审计记录但不会影响 Agent 行为。Skill 也只注入 `active` manifest，`draft` / `disabled` / `deprecated` / `quarantined` skill 仍可追溯但不会被自动选中。治理入口包括 `memory_status`、`memory_audit`、`skill_status`、`skill_audit`。
+
+Repo Index 构建会记录文件 manifest、chunk 数、复用文件数和 skipped 原因；后续搜索会根据 manifest 判断索引是否 stale，文件未变化时复用旧 chunks，运行态目录如 `.evolva/`、legacy `evolva/*` runtime 和测试 runtime 会被排除，避免 Trace/Memory/Policy audit 写入导致索引反复失效。
+
+Multi-agent 是受控的角色协作层，不是无边界的自治集群。`delegate_agent` / `collaborate` 会校验角色、去重角色、受 `EVOLVA_MULTI_AGENT_MAX_ROLES` 限制，并返回带 `run_id`、角色状态、耗时、fallback、错误信息和 `tool_calls` 的结构化报告。子 agent 可以调用角色 allowlist 内的工具，但所有调用都通过主 agent 的 Policy / 审批 / Sandbox / Trace 通道；默认范围偏保守：planner 只能看状态、记忆和 todo，researcher 可以读文件和查索引，coder / reviewer 可以读文件、查索引并运行受控 `python_exec`。`EVOLVA_MULTI_AGENT_TOOL_STEPS` 控制每个角色最多工具步数；写文件、shell、MCP 调用和递归 delegation 默认不在子 agent 工具范围内。LLM 调用失败时会降级为本地 fallback，并记录 `multi_agent.run` / `multi_agent.role` / `multi_agent.fallback` 指标。
 
 
 ## 演进路线
@@ -447,9 +466,12 @@ TUI 支持常见工作台快捷键：
 Evolva 是本地优先的 Agent，具备文件、Shell 和 Python 执行能力，因此把安全边界作为运行时的一等公民：
 
 - **Sandbox root**：文件工具统一通过 workspace sandbox 解析路径，阻止路径逃逸。
-- **Sandbox backend**：执行层通过 backend 接口隔离，默认本地 workspace backend，后续可扩展到更强隔离实现。
+- **Sandbox backend**：执行层通过 backend 接口隔离，默认本地 workspace backend，也支持 Docker backend 的网络、只读 root、CPU/内存和 pids 限制。
+- **Writable roots**：可用 `EVOLVA_SANDBOX_WRITABLE_ROOTS` 收窄可写路径，例如只允许写 `.evolva/workspace`。
+- **Failure rollback**：Shell / Python 执行失败时会回滚 snapshot 范围内的文件变更；可用 `EVOLVA_SANDBOX_SNAPSHOT_ROOTS` 和 `EVOLVA_SANDBOX_MAX_SNAPSHOT_BYTES` 调整范围与大小。
 - **Dangerous command denylist**：拦截 `rm -rf /`、`git reset --hard`、`mkfs`、`shutdown` 等高危片段。
-- **Policy engine**：对 Shell / Python、网络、路径、secret pattern 进行风险分级。
+- **Policy engine**：对 Shell / Python、网络、路径、secret pattern 进行风险分级；可用 `EVOLVA_POLICY_FILE` 加载 profile 规则、deny capability 和命令 denylist。
+- **Policy audit**：策略决策会进入 runtime home 下的 `policy/audit.jsonl`，默认是 `.evolva/policy/audit.jsonl`，便于审计工具调用是否被允许、拒绝或要求确认。
 - **Confirmation gate**：非 `--yes` 模式下，Shell / Python / MCP 等高风险工具需要确认。
 - **Trace audit**：关键决策、工具调用、失败信息和最终回答都会进入 trace，便于审计和复盘。
 

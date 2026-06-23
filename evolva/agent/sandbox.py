@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Protocol
 
@@ -22,6 +22,7 @@ DANGEROUS_SHELL = [
     "reboot",
 ]
 SHELL_CONTROL_TOKENS = ["&&", "||", "|", ";", "`", "$(", ">", "<"]
+SNAPSHOT_IGNORE_DIRS = {".git", ".hg", ".svn", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules"}
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,10 @@ class SandboxPolicy:
     container_cpus: str = "1"
     container_pids_limit: int = 128
     container_user: str = ""
+    writable_roots: tuple[Path, ...] = field(default_factory=tuple)
+    rollback_on_failure: bool = True
+    snapshot_roots: tuple[Path, ...] = field(default_factory=tuple)
+    max_snapshot_bytes: int = 5_000_000
 
 
 @dataclass(frozen=True)
@@ -51,6 +56,50 @@ class CommandSpec:
     @property
     def executable(self) -> str:
         return Path(self.argv[0]).name if self.argv else ""
+
+
+@dataclass
+class SnapshotEntry:
+    data: bytes
+    mode: int
+
+
+@dataclass
+class SandboxSnapshot:
+    """In-memory file snapshot for best-effort rollback of local executions."""
+
+    root: Path
+    roots: tuple[Path, ...]
+    files: dict[Path, SnapshotEntry]
+    skipped: list[str]
+
+    def restore(self) -> dict[str, object]:
+        removed = 0
+        restored = 0
+        known = set(self.files)
+        for root in self.roots:
+            if not root.exists():
+                continue
+            for path in sorted((p for p in root.rglob("*") if p.is_file()), reverse=True):
+                rel = path.relative_to(self.root)
+                if rel not in known:
+                    try:
+                        path.unlink()
+                        removed += 1
+                    except OSError:
+                        pass
+        for rel, entry in self.files.items():
+            path = self.root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                path.write_bytes(entry.data)
+                path.chmod(entry.mode)
+                restored += 1
+            except OSError:
+                pass
+        for root in self.roots:
+            _remove_empty_dirs(root)
+        return {"removed": removed, "restored": restored, "skipped": list(self.skipped)}
 
 
 class SandboxBackend(Protocol):
@@ -202,9 +251,13 @@ class Sandbox:
     """Workspace-aware sandbox for path resolution and local command execution."""
 
     def __init__(self, policy: SandboxPolicy, backend: SandboxBackend | None = None):
+        root = policy.root.resolve()
+        workspace = policy.workspace.resolve()
+        writable_roots = tuple((root / item).resolve() if not item.is_absolute() else item.resolve() for item in policy.writable_roots) or (root,)
+        snapshot_roots = tuple((root / item).resolve() if not item.is_absolute() else item.resolve() for item in policy.snapshot_roots) or (workspace,)
         self.policy = SandboxPolicy(
-            policy.root.resolve(),
-            policy.workspace.resolve(),
+            root,
+            workspace,
             policy.allow_shell,
             policy.default_timeout,
             policy.backend,
@@ -215,6 +268,10 @@ class Sandbox:
             policy.container_cpus,
             policy.container_pids_limit,
             policy.container_user,
+            writable_roots,
+            policy.rollback_on_failure,
+            snapshot_roots,
+            policy.max_snapshot_bytes,
         )
         self.backend = backend or build_backend(self.policy)
         self.policy.workspace.mkdir(parents=True, exist_ok=True)
@@ -237,8 +294,30 @@ class Sandbox:
                 raise ValueError(f"Path escapes sandbox root: {candidate}") from exc
         return candidate
 
+    def resolve_write(self, path: str | Path, *, base: Path | None = None) -> Path:
+        candidate = self.resolve(path, base=base, must_be_under_root=True)
+        if not self.is_writable(candidate):
+            roots = ", ".join(str(root) for root in self.policy.writable_roots)
+            raise ValueError(f"Path is outside sandbox writable roots: {candidate}; writable_roots={roots}")
+        return candidate
+
+    def is_writable(self, path: str | Path) -> bool:
+        candidate = Path(path).resolve()
+        for root in self.policy.writable_roots:
+            try:
+                candidate.relative_to(root)
+                return True
+            except ValueError:
+                continue
+        return False
+
     def describe(self) -> str:
-        details = f"Sandbox root={self.root}; workspace={self.workspace}; shell={'enabled' if self.policy.allow_shell else 'disabled'}; backend={self.backend.name}"
+        writable = ",".join(str(root.relative_to(self.root) if _is_relative_to(root, self.root) else root) for root in self.policy.writable_roots)
+        snapshots = ",".join(str(root.relative_to(self.root) if _is_relative_to(root, self.root) else root) for root in self.policy.snapshot_roots)
+        details = (
+            f"Sandbox root={self.root}; workspace={self.workspace}; shell={'enabled' if self.policy.allow_shell else 'disabled'}; "
+            f"backend={self.backend.name}; writable_roots={writable}; rollback_on_failure={self.policy.rollback_on_failure}; snapshot_roots={snapshots}"
+        )
         if isinstance(self.backend, DockerWorkspaceBackend):
             details += f"; image={self.backend.image}; network={self.backend.network}; read_only={self.backend.read_only}; memory={self.backend.memory}; cpus={self.backend.cpus}; pids_limit={self.backend.pids_limit}"
         return details
@@ -256,10 +335,10 @@ class Sandbox:
             spec = parse_command(command, cwd=cwd_path, timeout=timeout or self.policy.default_timeout)
         except ValueError as exc:
             return ToolResult(False, str(exc))
-        return self.backend.run_command(spec)
+        return self._run_with_snapshot(lambda: self.backend.run_command(spec))
 
     def run_python(self, code: str, *, timeout: int = 10) -> ToolResult:
-        return self.backend.run_python(code, cwd=self.root, timeout=timeout)
+        return self._run_with_snapshot(lambda: self.backend.run_python(code, cwd=self.root, timeout=timeout))
 
     def smoke_check(self, *, timeout: int = 10) -> ToolResult:
         """Run a fixed backend smoke check for deployment/pre-prod validation."""
@@ -271,6 +350,44 @@ class Sandbox:
         ok = result.ok and expected in result.output
         status = "ok" if ok else "failed"
         return ToolResult(ok, f"Sandbox smoke {status} backend={self.backend.name}\n{result.output}", data)
+
+    def snapshot(self) -> SandboxSnapshot:
+        files: dict[Path, SnapshotEntry] = {}
+        skipped: list[str] = []
+        used = 0
+        roots = tuple(root for root in self.policy.snapshot_roots if _is_relative_to(root, self.root))
+        for root in roots:
+            if not root.exists():
+                continue
+            for path in _iter_snapshot_files(root):
+                rel = path.relative_to(self.root)
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                if used + stat.st_size > self.policy.max_snapshot_bytes:
+                    skipped.append(rel.as_posix())
+                    continue
+                try:
+                    data = path.read_bytes()
+                except OSError:
+                    continue
+                files[rel] = SnapshotEntry(data, stat.st_mode)
+                used += stat.st_size
+        return SandboxSnapshot(self.root, roots, files, skipped)
+
+    def _run_with_snapshot(self, execute: Callable[[], ToolResult]) -> ToolResult:
+        snapshot = self.snapshot() if self.policy.rollback_on_failure else None
+        result = execute()
+        if result.ok or snapshot is None:
+            return result
+        rollback = snapshot.restore()
+        data = dict(result.data) if isinstance(result.data, dict) else {"raw_data": result.data}
+        data["rollback"] = rollback
+        output = f"{result.output}\nRolled back sandbox snapshot: restored={rollback['restored']} removed={rollback['removed']}"
+        if rollback["skipped"]:
+            output += f" skipped={len(rollback['skipped'])}"
+        return ToolResult(False, output, data)
 
 
 def parse_command(command: str, *, cwd: Path, timeout: int) -> CommandSpec:
@@ -322,3 +439,30 @@ def _host_user() -> str:
     if hasattr(os, "getuid") and hasattr(os, "getgid"):
         return f"{os.getuid()}:{os.getgid()}"
     return "1000:1000"
+
+
+def _iter_snapshot_files(root: Path):
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(part in SNAPSHOT_IGNORE_DIRS for part in path.parts):
+            continue
+        yield path
+
+
+def _remove_empty_dirs(root: Path) -> None:
+    if not root.exists():
+        return
+    for path in sorted((p for p in root.rglob("*") if p.is_dir()), key=lambda item: len(item.parts), reverse=True):
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
