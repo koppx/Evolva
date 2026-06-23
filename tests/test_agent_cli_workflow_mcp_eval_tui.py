@@ -159,6 +159,73 @@ def test_multi_agent_reports_budget_and_llm_failure_fallback(temp_config):
     assert "llm down" in failed.error
 
 
+def test_task_router_selects_roles_for_task_types(temp_config):
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+    router = agent.coordinator
+
+    assert router.route_task("hello").label == "simple"
+    assert router.route_task("read README").label == "tool_task"
+    assert router.route_task("调研 MCP 接入方案").roles == ["researcher", "reviewer"]
+    assert router.route_task("实现一个 task router 并补测试").roles == ["planner", "coder", "reviewer"]
+    assert router.route_task("review 这次改动有没有风险").roles == ["reviewer"]
+    complex_route = router.route_task("设计技术方案，完成实现和测试，并评审生产化风险")
+    assert complex_route.label == "complex"
+    assert complex_route.roles == ["planner", "researcher", "coder", "reviewer"]
+    capped = router.route_task("设计技术方案，完成实现和测试，并评审生产化风险", max_roles=2)
+    assert capped.roles == ["planner", "reviewer"]
+
+
+def test_collaborate_uses_task_router_when_roles_are_omitted(temp_config):
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+    report = agent.coordinator.collaborate_report("调研 MCP 接入方案")
+
+    assert report.route
+    assert report.route["label"] == "research"
+    assert report.roles == ["researcher", "reviewer"]
+
+
+def test_agent_chat_auto_routes_complex_tasks_into_context_and_trace(temp_config):
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+
+    class RoutedLLM:
+        available = True
+
+        def chat(self, messages, **kwargs):
+            return LLMResponse(content=json.dumps({"thought": "done", "tool": None, "final": "routed answer"}))
+
+    agent.llm = RoutedLLM()
+    agent.coordinator.llm = agent.llm
+
+    result = agent.chat("设计技术方案，完成实现和测试，并评审生产化风险")
+    trace = agent.tracer.load(agent.tracer.list_runs(limit=1)[0]["run_id"])
+    kinds = [event["kind"] for event in trace["events"]]
+
+    assert result.answer == "routed answer"
+    assert "task_route" in kinds
+    assert "multi_agent_auto_route" in kinds
+    assert "Auto task route `complex`" in agent.context.render("task route")
+
+
+def test_agent_chat_can_disable_auto_task_router(temp_config):
+    config = replace(temp_config, multi_agent_auto_route=False)
+    agent = EvolvaAgent(config, assume_yes=True)
+
+    class SimpleLLM:
+        available = True
+
+        def chat(self, messages, **kwargs):
+            return LLMResponse(content=json.dumps({"thought": "done", "tool": None, "final": "plain answer"}))
+
+    agent.llm = SimpleLLM()
+    agent.coordinator.llm = agent.llm
+
+    result = agent.chat("设计技术方案，完成实现和测试，并评审生产化风险")
+    trace = agent.tracer.load(agent.tracer.list_runs(limit=1)[0]["run_id"])
+
+    assert result.answer == "plain answer"
+    assert "task_route" not in [event["kind"] for event in trace["events"]]
+
+
 def test_sub_agent_can_call_allowed_tools_through_governed_runner(temp_config):
     (temp_config.root / "brief.md").write_text("production notes", encoding="utf-8")
     agent = EvolvaAgent(temp_config, assume_yes=True)

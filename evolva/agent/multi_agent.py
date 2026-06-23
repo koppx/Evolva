@@ -38,6 +38,21 @@ class AgentRoleResult:
     tool_calls: list[dict[str, object]] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class TaskRoute:
+    label: str
+    roles: list[str]
+    reason: str
+    confidence: float = 0.5
+
+    @property
+    def should_collaborate(self) -> bool:
+        return bool(self.roles)
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
 @dataclass
 class MultiAgentRun:
     run_id: str
@@ -49,6 +64,7 @@ class MultiAgentRun:
     max_roles: int
     results: list[AgentRoleResult] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    route: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -95,6 +111,86 @@ DEFAULT_ROLES: dict[str, AgentRole] = {
 }
 
 
+class TaskRouter:
+    """Deterministic first-pass router for deciding when role agents help."""
+
+    COMPLEX_MARKERS = {
+        "架构",
+        "生产",
+        "工业",
+        "重构",
+        "端到端",
+        "实现和测试",
+        "测试并行",
+        "技术方案",
+        "rollout",
+        "architecture",
+        "production",
+        "end-to-end",
+        "refactor",
+        "migration",
+        "design and implement",
+    }
+    CODING_MARKERS = {
+        "实现",
+        "修复",
+        "改代码",
+        "开发",
+        "加一个",
+        "build",
+        "implement",
+        "fix",
+        "code",
+        "add ",
+        "create",
+    }
+    RESEARCH_MARKERS = {"调研", "分析", "对比", "查一下", "研究", "research", "compare", "investigate", "analyze"}
+    REVIEW_MARKERS = {"review", "检查", "审查", "评审", "看看", "有没有问题", "risk", "risks"}
+    TOOL_MARKERS = {"读取", "列出", "运行", "执行", "搜索", "read", "list", "run", "search", "grep"}
+
+    def route(self, task: str, *, max_roles: int = 4) -> TaskRoute:
+        text = " ".join(task.lower().split())
+        if not text:
+            return TaskRoute("simple", [], "empty task", 0.1)
+
+        has_complex = self._has_any(text, self.COMPLEX_MARKERS)
+        has_coding = self._has_any(text, self.CODING_MARKERS)
+        has_research = self._has_any(text, self.RESEARCH_MARKERS)
+        has_review = self._has_any(text, self.REVIEW_MARKERS)
+        has_tool = self._has_any(text, self.TOOL_MARKERS)
+        signal_count = sum([has_complex, has_coding, has_research, has_review])
+        long_task = len(text) > 120 or text.count("，") + text.count(",") + text.count("\n") >= 3
+
+        if has_complex or signal_count >= 2 or (long_task and (has_coding or has_research or has_review)):
+            return self._bounded("complex", ["planner", "researcher", "coder", "reviewer"], "complex task with multiple work surfaces", max_roles, 0.86)
+        if has_coding:
+            return self._bounded("coding", ["planner", "coder", "reviewer"], "implementation task benefits from plan/code/review roles", max_roles, 0.78)
+        if has_research:
+            return self._bounded("research", ["researcher", "reviewer"], "research task benefits from evidence and review roles", max_roles, 0.72)
+        if has_review:
+            return self._bounded("review", ["reviewer"], "review task benefits from a focused reviewer role", max_roles, 0.68)
+        if has_tool:
+            return TaskRoute("tool_task", [], "single-agent tool task", 0.55)
+        return TaskRoute("simple", [], "simple single-agent task", 0.45)
+
+    def _bounded(self, label: str, roles: list[str], reason: str, max_roles: int, confidence: float) -> TaskRoute:
+        max_roles = max(1, int(max_roles))
+        if len(roles) <= max_roles:
+            selected = roles
+        elif max_roles == 1:
+            selected = ["reviewer"] if label == "review" else ["planner"]
+        elif label == "research":
+            selected = ["researcher", "reviewer"][:max_roles]
+        elif label == "coding":
+            selected = ["planner", "reviewer"] if max_roles == 2 else roles[:max_roles]
+        else:
+            selected = ["planner", "reviewer"] if max_roles == 2 else roles[:max_roles]
+        return TaskRoute(label, selected, reason, confidence)
+
+    def _has_any(self, text: str, markers: set[str]) -> bool:
+        return any(marker in text for marker in markers)
+
+
 class MultiAgentCoordinator:
     """Role-based collaboration harness backed by the same LLM and shared state."""
 
@@ -117,6 +213,7 @@ class MultiAgentCoordinator:
         self.max_tool_steps = max(0, int(max_tool_steps))
         self.tool_runner: ToolRunner | None = None
         self.tool_registry: ToolRegistry | None = None
+        self.router = TaskRouter()
 
     def attach_tools(self, runner: ToolRunner, registry: ToolRegistry) -> None:
         """Attach the governed main-agent tool runner for bounded sub-agent use."""
@@ -169,7 +266,13 @@ class MultiAgentCoordinator:
         task = task.strip()
         if not task:
             raise ValueError("task is required")
-        chosen = roles or ["planner", "researcher", "coder", "reviewer"]
+        route = None
+        if roles is None:
+            route_obj = self.route_task(task)
+            route = route_obj.to_dict()
+            chosen = route_obj.roles or ["planner", "researcher", "coder", "reviewer"]
+        else:
+            chosen = roles
         chosen = self._normalize_roles(chosen)
         run_id = "multi_" + time.strftime("%Y%m%d_%H%M%S", time.gmtime()) + "_" + uuid.uuid4().hex[:8]
         started_at = time.time()
@@ -183,7 +286,10 @@ class MultiAgentCoordinator:
                 errors.append(f"{role}: {result.error or result.status}")
             running_context += f"\n\n[{role}]\n{result.output}"
         status = "completed" if not errors else "completed_with_fallbacks"
-        return MultiAgentRun(run_id=run_id, task=task, roles=chosen, status=status, started_at=started_at, ended_at=time.time(), max_roles=self.max_roles_per_run, results=results, errors=errors)
+        return MultiAgentRun(run_id=run_id, task=task, roles=chosen, status=status, started_at=started_at, ended_at=time.time(), max_roles=self.max_roles_per_run, results=results, errors=errors, route=route)
+
+    def route_task(self, task: str, *, max_roles: int | None = None) -> TaskRoute:
+        return self.router.route(task, max_roles=max_roles or self.max_roles_per_run)
 
     def _normalize_roles(self, roles: list[str]) -> list[str]:
         normalized: list[str] = []

@@ -187,6 +187,8 @@ class AgentConfig:
     memory_context_min_confidence: float = field(default_factory=lambda: _runtime_float("memory_context_min_confidence", "EVOLVA_MEMORY_CONTEXT_MIN_CONFIDENCE", 0.5))
     multi_agent_max_roles: int = field(default_factory=lambda: _runtime_int("EVOLVA_MULTI_AGENT_MAX_ROLES", 4))
     multi_agent_tool_steps: int = field(default_factory=lambda: _runtime_int("EVOLVA_MULTI_AGENT_TOOL_STEPS", 2))
+    multi_agent_auto_route: bool = field(default_factory=lambda: _runtime_bool("EVOLVA_MULTI_AGENT_AUTO_ROUTE", True))
+    multi_agent_auto_route_max_roles: int = field(default_factory=lambda: _runtime_int("EVOLVA_MULTI_AGENT_AUTO_ROUTE_MAX_ROLES", 4))
     dream_require_verification: bool = field(default_factory=lambda: _runtime_bool("EVOLVA_DREAM_REQUIRE_VERIFICATION", True))
     max_steps: int = int(os.getenv("EVOLVA_MAX_STEPS", "8"))
     auto_evolve: bool = os.getenv("EVOLVA_AUTO_EVOLVE", "1") != "0"

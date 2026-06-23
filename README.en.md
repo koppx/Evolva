@@ -233,7 +233,7 @@ Memory / Skill governance separates "stored for audit" from "allowed into the pr
 
 Repo Index remembers what was indexed, what was skipped, and what can be reused. Runtime artifacts are ignored so traces and audit files do not constantly invalidate search.
 
-Multi-agent is governed collaboration, not unbounded autonomy. Sub-agents can call tools inside their role scope, but every call still goes through the main agent's Policy, approval, Sandbox, and Trace path. Writes, shell, MCP calls, and recursive delegation are outside the default sub-agent scope.
+Multi-agent is governed collaboration, not unbounded autonomy. The Task Router first classifies the request: simple questions stay single-agent, research tasks use researcher/reviewer, coding tasks use planner/coder/reviewer, and broad engineering tasks use the full role set. Sub-agents can call tools inside their role scope, but every call still goes through the main agent's Policy, approval, Sandbox, and Trace path. Writes, shell, MCP calls, and recursive delegation are outside the default sub-agent scope.
 
 ```json
 {

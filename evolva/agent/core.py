@@ -228,6 +228,7 @@ class EvolvaAgent:
                 self.tracer.event("agent_chat_end", {"status": "fallback", "answer": result.answer[:4000]})
             return result
 
+        self._auto_route_task(user_message)
         state = self.graph_runtime.run(user_message, image_sources=image_sources, llm_timeout=llm_timeout, execution_bounds=execution_bounds)
         final = state.get("final", "")
         failed_tools = state.get("failed_tools", [])
@@ -238,6 +239,27 @@ class EvolvaAgent:
         else:
             self.tracer.event("agent_chat_end", {"status": status, "answer": final[:4000], "failed_tools": failed_tools})
         return TurnResult(answer=final, tool_logs=state.get("tool_logs", []), failed_tools=failed_tools, stopped_by_limit=stopped_by_limit)
+
+    def _auto_route_task(self, user_message: str) -> None:
+        if not getattr(self.config, "multi_agent_auto_route", True):
+            return
+        max_roles = min(int(getattr(self.config, "multi_agent_auto_route_max_roles", 4)), int(getattr(self.config, "multi_agent_max_roles", 4)))
+        route = self.coordinator.route_task(user_message, max_roles=max_roles)
+        self.tracer.event("task_route", route.to_dict())
+        if not route.should_collaborate:
+            return
+        report = self.coordinator.collaborate_report(
+            user_message,
+            roles=route.roles,
+            context=f"Automatic task route: {route.label}. Reason: {route.reason}",
+        )
+        self.tracer.event("multi_agent_auto_route", {"route": route.to_dict(), "report": report.to_dict()})
+        self.context.add(
+            "note",
+            f"Auto task route `{route.label}` selected roles: {', '.join(route.roles)}.\n{report.render()}",
+            role="router",
+            meta={"route": route.to_dict(), "multi_agent_run_id": report.run_id},
+        )
 
     def graph_nodes(self) -> list[str]:
         """Return the explicit LangGraph node names used by the runtime."""

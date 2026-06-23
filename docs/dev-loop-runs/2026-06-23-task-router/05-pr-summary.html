@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Task Router Summary</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 40px; line-height: 1.5; color: #17202a; }
+    h1, h2 { color: #0b0f14; }
+    code { background: #f4f6f8; padding: 2px 5px; border-radius: 4px; }
+    .pass { color: #126b3f; font-weight: 700; }
+    section { max-width: 920px; margin-bottom: 28px; }
+  </style>
+</head>
+<body>
+  <section>
+    <h1>Task Router</h1>
+    <p><strong>Problem:</strong> Evolva could run role agents, but the framework did not decide when a task deserved multi-agent collaboration.</p>
+    <p><strong>Change:</strong> Added a deterministic Task Router that classifies tasks, selects bounded roles, records Trace/Context evidence, and lets the main agent continue with that role evidence.</p>
+    <p><strong>Verdict:</strong> <span class="pass">PASS</span></p>
+  </section>
+  <section>
+    <h2>Validation</h2>
+    <ul>
+      <li><code>targeted pytest</code>: 5 passed.</li>
+      <li><code>targeted ruff</code>: passed.</li>
+      <li><code>.venv/bin/python -m pytest -q</code>: 169 passed, 1 skipped.</li>
+      <li><code>.venv/bin/python -m ruff check .</code>: passed.</li>
+    </ul>
+  </section>
+</body>
+</html>
