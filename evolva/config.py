@@ -7,13 +7,21 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT_ENV = "EVOLVA_ROOT"
 RUNTIME_HOME_ENV = "EVOLVA_RUNTIME_HOME"
 
 LLM_CONFIG_KEYS = {"api_key", "model", "base_url", "temperature", "request_timeout", "llm_retry_backoff", "memory_context_min_confidence"}
 
 
-def default_runtime_home(root: Path = ROOT) -> Path:
+def default_root() -> Path:
+    raw = os.getenv(ROOT_ENV)
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return Path.cwd().resolve()
+
+
+def default_runtime_home(root: Path | None = None) -> Path:
+    root = (root or default_root()).resolve()
     raw = os.getenv(RUNTIME_HOME_ENV)
     if raw:
         candidate = Path(raw).expanduser()
@@ -21,7 +29,7 @@ def default_runtime_home(root: Path = ROOT) -> Path:
     return root / ".evolva"
 
 
-def default_runtime_path(*parts: str, root: Path = ROOT) -> Path:
+def default_runtime_path(*parts: str, root: Path | None = None) -> Path:
     return default_runtime_home(root) / Path(*parts)
 
 
@@ -138,7 +146,7 @@ def mask_secret(value: str | None) -> str:
 
 @dataclass(frozen=True)
 class AgentConfig:
-    root: Path = ROOT
+    root: Path = field(default_factory=default_root)
     runtime_home: Path = field(default_factory=default_runtime_home)
     workspace: Path = field(default_factory=lambda: default_runtime_path("workspace"))
     memory_file: Path = field(default_factory=lambda: default_runtime_path("memory", "memory.jsonl"))
@@ -187,14 +195,17 @@ class AgentConfig:
     memory_context_min_confidence: float = field(default_factory=lambda: _runtime_float("memory_context_min_confidence", "EVOLVA_MEMORY_CONTEXT_MIN_CONFIDENCE", 0.5))
     multi_agent_max_roles: int = field(default_factory=lambda: _runtime_int("EVOLVA_MULTI_AGENT_MAX_ROLES", 4))
     multi_agent_tool_steps: int = field(default_factory=lambda: _runtime_int("EVOLVA_MULTI_AGENT_TOOL_STEPS", 2))
-    multi_agent_auto_route: bool = field(default_factory=lambda: _runtime_bool("EVOLVA_MULTI_AGENT_AUTO_ROUTE", True))
+    multi_agent_auto_route: bool = field(default_factory=lambda: _runtime_bool("EVOLVA_MULTI_AGENT_AUTO_ROUTE", False))
     multi_agent_auto_route_max_roles: int = field(default_factory=lambda: _runtime_int("EVOLVA_MULTI_AGENT_AUTO_ROUTE_MAX_ROLES", 4))
     dream_require_verification: bool = field(default_factory=lambda: _runtime_bool("EVOLVA_DREAM_REQUIRE_VERIFICATION", True))
     max_steps: int = int(os.getenv("EVOLVA_MAX_STEPS", "8"))
     auto_evolve: bool = os.getenv("EVOLVA_AUTO_EVOLVE", "1") != "0"
 
     def __post_init__(self) -> None:
-        if self.root != ROOT and self.runtime_home == default_runtime_home(ROOT):
+        root = Path(self.root).expanduser().resolve()
+        object.__setattr__(self, "root", root)
+        default_config_root = default_root()
+        if self.runtime_home == default_runtime_home(default_config_root) and root != default_config_root:
             object.__setattr__(self, "runtime_home", default_runtime_home(self.root))
         self._relocate_default_path("workspace", "workspace")
         self._relocate_default_path("memory_file", "memory", "memory.jsonl")
@@ -218,7 +229,7 @@ class AgentConfig:
 
     def _relocate_default_path(self, attr: str, *parts: str) -> None:
         current = getattr(self, attr)
-        if current == default_runtime_path(*parts, root=ROOT):
+        if current == default_runtime_path(*parts):
             object.__setattr__(self, attr, Path(self.runtime_home) / Path(*parts))
 
     def ensure_dirs(self) -> None:

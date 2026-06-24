@@ -186,7 +186,8 @@ def test_collaborate_uses_task_router_when_roles_are_omitted(temp_config):
 
 
 def test_agent_chat_auto_routes_complex_tasks_into_context_and_trace(temp_config):
-    agent = EvolvaAgent(temp_config, assume_yes=True)
+    config = replace(temp_config, multi_agent_auto_route=True)
+    agent = EvolvaAgent(config, assume_yes=True)
 
     class RoutedLLM:
         available = True
@@ -208,8 +209,7 @@ def test_agent_chat_auto_routes_complex_tasks_into_context_and_trace(temp_config
 
 
 def test_agent_chat_can_disable_auto_task_router(temp_config):
-    config = replace(temp_config, multi_agent_auto_route=False)
-    agent = EvolvaAgent(config, assume_yes=True)
+    agent = EvolvaAgent(temp_config, assume_yes=True)
 
     class SimpleLLM:
         available = True
@@ -288,6 +288,33 @@ def test_sub_agent_rejects_tools_outside_role_scope(temp_config):
     assert result.tool_calls[0]["tool"] == "write_file"
     assert result.tool_calls[0]["status"] == "denied"
     assert not (temp_config.root / "denied.txt").exists()
+
+
+def test_sub_agent_default_roles_do_not_allow_python_write_bypass(temp_config):
+    agent = EvolvaAgent(temp_config, assume_yes=True)
+
+    class PythonWriteAttemptLLM:
+        available = True
+
+        def chat(self, messages, **kwargs):
+            return LLMResponse(
+                content=json.dumps(
+                    {
+                        "thought": "Try a write through python.",
+                        "tool": {"name": "python_exec", "args": {"code": "from pathlib import Path; Path('bypass.txt').write_text('nope')"}},
+                        "final": None,
+                    }
+                )
+            )
+
+    agent.coordinator.llm = PythonWriteAttemptLLM()
+    result = agent.coordinator.delegate_report("coder", "write through python")
+
+    assert not result.ok
+    assert result.status == "tool_denied"
+    assert "not allowed" in result.error
+    assert result.tool_calls[0]["tool"] == "python_exec"
+    assert not (temp_config.workspace / "bypass.txt").exists()
 
 
 def test_trace_recorder_list_load_render_disabled_and_path_sanitization(tmp_path):
@@ -590,6 +617,7 @@ def test_mcp_client_rejects_oversized_message(tmp_path):
 def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_config):
     parser = build_parser()
     assert parser.prog == "evolva"
+    assert parser.parse_args(["--root", str(temp_config.root), "ask", "hi"]).root == temp_config.root
     assert parser.parse_args(["ask", "hi", "--image", "a.png", "--yes"]).image == ["a.png"]
     root_args = parser.parse_args([])
     assert root_args.cmd is None and root_args.chat is False
@@ -629,21 +657,21 @@ def test_cli_parser_main_once_and_handle_commands(monkeypatch, capsys, temp_conf
 
     called = {}
 
-    def fake_run_tui(assume_yes=False, show_tools=True):
-        called["tui"] = (assume_yes, show_tools)
+    def fake_run_tui(assume_yes=False, show_tools=True, config=None):
+        called["tui"] = (assume_yes, show_tools, config.root)
         return 0
 
     monkeypatch.setattr("evolva.cli.run_tui", fake_run_tui)
     assert main([]) == 0
-    assert called["tui"] == (False, True)
+    assert called["tui"] == (False, True, temp_config.root)
 
-    def fake_fullscreen_tui(assume_yes=False, show_tools=True):
-        called["fullscreen"] = (assume_yes, show_tools)
+    def fake_fullscreen_tui(assume_yes=False, show_tools=True, config=None):
+        called["fullscreen"] = (assume_yes, show_tools, config.root)
         return 0
 
     monkeypatch.setattr("evolva.cli.run_fullscreen_tui", fake_fullscreen_tui)
     assert main(["tui", "--fullscreen", "--yes", "--no-tools"]) == 0
-    assert called["fullscreen"] == (True, False)
+    assert called["fullscreen"] == (True, False, temp_config.root)
 
     def fake_chat(args):
         called["chat"] = (args.yes, args.show_tools)
@@ -970,21 +998,21 @@ def test_inline_tui_renders_workbench_panels(monkeypatch, capsys, temp_config):
 def test_run_tui_delegates_to_textual_workbench(monkeypatch):
     called = {}
 
-    def fake_textual(assume_yes=False, show_tools=True):
-        called["args"] = (assume_yes, show_tools)
+    def fake_textual(assume_yes=False, show_tools=True, config=None):
+        called["args"] = (assume_yes, show_tools, config)
         return 17
 
     monkeypatch.setattr(tui_module, "run_textual_tui", fake_textual)
     assert tui_module.run_tui(assume_yes=True, show_tools=False) == 17
-    assert called["args"] == (True, False)
+    assert called["args"] == (True, False, None)
 
 
 def test_textual_tui_falls_back_to_inline_when_missing(monkeypatch, capsys):
     called = {}
 
     class FakeInlineTUI:
-        def __init__(self, assume_yes=False, show_tools=True):
-            called["init"] = (assume_yes, show_tools)
+        def __init__(self, assume_yes=False, show_tools=True, config=None):
+            called["init"] = (assume_yes, show_tools, config)
 
         def run(self):
             called["run"] = True
@@ -993,7 +1021,7 @@ def test_textual_tui_falls_back_to_inline_when_missing(monkeypatch, capsys):
     monkeypatch.setattr(tui_module, "TEXTUAL_AVAILABLE", False)
     monkeypatch.setattr(tui_module, "EvolvaInlineTUI", FakeInlineTUI)
     assert tui_module.run_textual_tui(assume_yes=True, show_tools=False) == 23
-    assert called == {"init": (True, False), "run": True}
+    assert called == {"init": (True, False, None), "run": True}
     assert "falling back to the inline TUI" in capsys.readouterr().out
 
 

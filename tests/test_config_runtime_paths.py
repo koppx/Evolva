@@ -3,12 +3,13 @@ from __future__ import annotations
 import stat
 from pathlib import Path
 
-from evolva.config import AgentConfig, default_runtime_home, default_runtime_path, load_runtime_config, remove_runtime_config_keys, save_runtime_config
+from evolva.config import AgentConfig, default_root, default_runtime_home, default_runtime_path, load_runtime_config, remove_runtime_config_keys, save_runtime_config
 
 
 def test_agent_config_defaults_runtime_state_under_dot_evolva():
     cfg = AgentConfig()
 
+    assert cfg.root == Path.cwd().resolve()
     assert cfg.runtime_home == cfg.root / ".evolva"
     assert cfg.workspace == cfg.runtime_home / "workspace"
     assert cfg.memory_file == cfg.runtime_home / "memory" / "memory.jsonl"
@@ -28,6 +29,16 @@ def test_agent_config_defaults_runtime_state_under_dot_evolva():
     assert cfg.mcp_config_file == cfg.runtime_home / "mcp" / "servers.json"
     assert cfg.mcp_tools_cache_file == cfg.runtime_home / "mcp" / "tools-cache.json"
     assert cfg.repo_index_file == cfg.runtime_home / "repo_index" / "index.json"
+    assert cfg.multi_agent_auto_route is False
+
+
+def test_agent_config_reads_root_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("EVOLVA_ROOT", str(tmp_path))
+
+    assert default_root() == tmp_path.resolve()
+    cfg = AgentConfig()
+    assert cfg.root == tmp_path.resolve()
+    assert cfg.runtime_home == tmp_path / ".evolva"
 
 
 def test_agent_config_temp_root_relocates_default_runtime_paths(tmp_path):

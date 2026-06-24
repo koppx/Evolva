@@ -29,7 +29,7 @@ ARCHIVE_EXTENSIONS = {".zip"}
 TASKSET_EXTERNAL_BINARIES = ["tesseract", "ffmpeg", "ffprobe", "yt-dlp", "whisper", "pdftotext"]
 TASKSET_BROWSER_SEARCH_BINARIES = ["node", "npx", "uv", "uvx", "playwright", "google-chrome", "chromium"]
 TASKSET_SEARCH_ENV_KEYS = ["TAVILY_API_KEY", "BRAVE_API_KEY", "SERPAPI_API_KEY", "BING_SEARCH_API_KEY", "EXA_API_KEY"]
-TASKSET_OPTIONAL_MODULES = ["pypdf", "PyPDF2", "pandas", "pyarrow", "openpyxl", "PIL", "pytesseract", "moviepy"]
+TASKSET_OPTIONAL_MODULES = ["pypdf", "PyPDF2", "pandas", "pyarrow", "fastparquet", "openpyxl", "PIL", "pytesseract", "moviepy"]
 
 
 def _module_available(name: str) -> bool:
@@ -117,17 +117,19 @@ def taskset_tool_health(mcp_config_file: str | Path | None = None) -> ToolResult
 
     binaries = {name: {"available": shutil.which(name) is not None, "path": shutil.which(name)} for name in TASKSET_EXTERNAL_BINARIES}
     modules = {name: {"available": _module_available(name)} for name in TASKSET_OPTIONAL_MODULES}
+    parquet_engine = modules["pyarrow"]["available"] or modules["fastparquet"]["available"]
     capabilities = {
         "static_web_fetch": True,
         "text_csv_docx_pptx_zip": True,
-        "xlsx": modules["openpyxl"]["available"] or True,
+        "xlsx_basic": True,
+        "xlsx_formula_aware": modules["openpyxl"]["available"],
         "pdf_text": modules["pypdf"]["available"] or modules["PyPDF2"]["available"] or binaries["pdftotext"]["available"],
         "ocr_image": modules["PIL"]["available"] and modules["pytesseract"]["available"] or binaries["tesseract"]["available"],
         "audio_transcription": binaries["whisper"]["available"],
         "video_probe": binaries["ffprobe"]["available"],
         "video_frames": binaries["ffmpeg"]["available"],
         "youtube_metadata": binaries["yt-dlp"]["available"],
-        "parquet_table": modules["pandas"]["available"] and (modules["pyarrow"]["available"] or True),
+        "parquet_table": modules["pandas"]["available"] and parquet_engine,
     }
     web_health = browser_search_health(mcp_config_file)
     capabilities.update({
@@ -144,8 +146,8 @@ def taskset_tool_health(mcp_config_file: str | Path | None = None) -> ToolResult
     for name, info in binaries.items():
         lines.append(f"- {name}: {'ok' if info['available'] else 'missing'}" + (f" ({info['path']})" if info.get("path") else ""))
     lines.append("Python modules:")
-    for name, info in modules.items():
-        lines.append(f"- {name}: {'ok' if info['available'] else 'missing'}")
+    for name, module_info in modules.items():
+        lines.append(f"- {name}: {'ok' if module_info['available'] else 'missing'}")
     lines.append("Capabilities:")
     for name, available in capabilities.items():
         lines.append(f"- {name}: {'ok' if available else 'missing'}")

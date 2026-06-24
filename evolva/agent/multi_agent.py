@@ -100,13 +100,13 @@ DEFAULT_ROLES: dict[str, AgentRole] = {
         "coder",
         "Implements code changes",
         "You are Evolva Coder. Propose concrete code edits and verification commands.",
-        ("recall", "context_view", "repo_index_search", "repo_index_status", "list_files", "read_file", "sandbox_info", "python_exec"),
+        ("recall", "context_view", "repo_index_search", "repo_index_status", "list_files", "read_file", "sandbox_info"),
     ),
     "reviewer": AgentRole(
         "reviewer",
         "Reviews results for bugs and gaps",
         "You are Evolva Reviewer. Find missing requirements, risks, and test gaps.",
-        ("recall", "context_view", "repo_index_search", "repo_index_status", "list_files", "read_file", "sandbox_info", "python_exec"),
+        ("recall", "context_view", "repo_index_search", "repo_index_status", "list_files", "read_file", "sandbox_info"),
     ),
 }
 
@@ -311,7 +311,7 @@ class MultiAgentCoordinator:
         allowed = tuple(name for name in role.tool_names if self.tool_registry is not None and name in self.tool_registry.names())
         scratch = ""
         tool_calls: list[dict[str, object]] = []
-        messages = [
+        messages: list[dict[str, object]] = [
             {"role": "system", "content": role.system_prompt + "\n\n" + self._tool_loop_instructions(role, allowed)},
         ]
         for _ in range(self.max_tool_steps + 1):
@@ -348,7 +348,7 @@ class MultiAgentCoordinator:
             if name not in allowed:
                 call = self._tool_call_summary(name, args, ok=False, status="denied", output=f"Tool `{name}` is not allowed for role `{role.name}`.")
                 tool_calls.append(call)
-                return AgentRoleResult(role.name, False, call["output"], "tool_denied", int((time.monotonic() - started) * 1000), error=str(call["output"]), tool_calls=tool_calls)
+                return AgentRoleResult(role.name, False, str(call["output"]), "tool_denied", int((time.monotonic() - started) * 1000), error=str(call["output"]), tool_calls=tool_calls)
             assert self.tool_runner is not None
             result = self.tool_runner(name, dict(args))
             call = self._tool_call_summary(name, args, ok=result.ok, status="ok" if result.ok else "failed", output=result.output)

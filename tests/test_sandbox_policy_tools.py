@@ -29,6 +29,9 @@ def make_registry(tmp_path):
 def test_sandbox_resolve_and_describe(tmp_path):
     sandbox = Sandbox(SandboxPolicy(tmp_path, tmp_path / "workspace"))
     assert sandbox.resolve("workspace/a.txt") == (tmp_path / "workspace" / "a.txt").resolve()
+    assert sandbox.resolve_write("workspace/a.txt") == (tmp_path / "workspace" / "a.txt").resolve()
+    with pytest.raises(ValueError, match="outside sandbox writable roots"):
+        sandbox.resolve_write("root.txt")
     assert "shell=enabled" in sandbox.describe()
     assert "backend=local" in sandbox.describe()
     with pytest.raises(ValueError, match="escapes"):
@@ -66,8 +69,8 @@ def test_sandbox_rolls_back_workspace_on_failed_python(tmp_path):
 
     result = sandbox.run_python(
         "from pathlib import Path\n"
-        "Path('workspace/state.txt').write_text('after')\n"
-        "Path('workspace/new.txt').write_text('new')\n"
+        "Path('state.txt').write_text('after')\n"
+        "Path('new.txt').write_text('new')\n"
         "raise SystemExit(3)"
     )
 
@@ -84,7 +87,7 @@ def test_sandbox_keeps_workspace_changes_on_success(tmp_path):
     workspace.mkdir()
     sandbox = Sandbox(SandboxPolicy(tmp_path, workspace))
 
-    result = sandbox.run_python("from pathlib import Path\nPath('workspace/success.txt').write_text('ok')")
+    result = sandbox.run_python("from pathlib import Path\nPath('success.txt').write_text('ok')")
 
     assert result.ok
     assert (workspace / "success.txt").read_text(encoding="utf-8") == "ok"

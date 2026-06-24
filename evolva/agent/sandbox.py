@@ -253,8 +253,8 @@ class Sandbox:
     def __init__(self, policy: SandboxPolicy, backend: SandboxBackend | None = None):
         root = policy.root.resolve()
         workspace = policy.workspace.resolve()
-        writable_roots = tuple((root / item).resolve() if not item.is_absolute() else item.resolve() for item in policy.writable_roots) or (root,)
-        snapshot_roots = tuple((root / item).resolve() if not item.is_absolute() else item.resolve() for item in policy.snapshot_roots) or (workspace,)
+        writable_roots = tuple((root / item).resolve() if not item.is_absolute() else item.resolve() for item in policy.writable_roots) or (workspace,)
+        snapshot_roots = tuple((root / item).resolve() if not item.is_absolute() else item.resolve() for item in policy.snapshot_roots) or writable_roots
         self.policy = SandboxPolicy(
             root,
             workspace,
@@ -338,7 +338,7 @@ class Sandbox:
         return self._run_with_snapshot(lambda: self.backend.run_command(spec))
 
     def run_python(self, code: str, *, timeout: int = 10) -> ToolResult:
-        return self._run_with_snapshot(lambda: self.backend.run_python(code, cwd=self.root, timeout=timeout))
+        return self._run_with_snapshot(lambda: self.backend.run_python(code, cwd=self.workspace, timeout=timeout))
 
     def smoke_check(self, *, timeout: int = 10) -> ToolResult:
         """Run a fixed backend smoke check for deployment/pre-prod validation."""

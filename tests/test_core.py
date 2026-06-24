@@ -40,8 +40,8 @@ def test_tools_write_read(tmp_path):
     llm = OpenAICompatibleLLM(AgentConfig(root=tmp_path, workspace=tmp_path / "workspace", memory_file=tmp_path / "memory.jsonl", skills_dir=tmp_path / "skills", context_file=tmp_path / "context.json", todo_file=tmp_path / "todos.json"))
     coordinator = MultiAgentCoordinator(llm, memory, skills, todos)
     reg = build_registry(sandbox, memory, skills, context, todos, coordinator)
-    assert reg.call("write_file", {"path": "a.txt", "content": "hello"}).ok
-    out = reg.call("read_file", {"path": "a.txt"})
+    assert reg.call("write_file", {"path": "workspace/a.txt", "content": "hello"}).ok
+    out = reg.call("read_file", {"path": "workspace/a.txt"})
     assert out.ok and out.output == "hello"
 
 

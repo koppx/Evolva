@@ -114,6 +114,12 @@ def test_taskset_optional_tool_health_and_media_wrappers(tmp_path: Path, capsys)
     assert "binaries" in health.data
     assert "browser_search" in health.data
     assert "ocr_image" in health.data["capabilities"]
+    assert "xlsx_basic" in health.data["capabilities"]
+    assert "xlsx" not in health.data["capabilities"]
+    assert health.data["capabilities"]["parquet_table"] == (
+        health.data["modules"]["pandas"]["available"]
+        and (health.data["modules"]["pyarrow"]["available"] or health.data["modules"]["fastparquet"]["available"])
+    )
 
     image = tmp_path / "fake.png"
     image.write_bytes(b"not really an image")

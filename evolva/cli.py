@@ -4,6 +4,7 @@ import argparse
 import json
 import shlex
 import sys
+from pathlib import Path
 from typing import Any
 
 from evolva.agent.core import EvolvaAgent
@@ -19,6 +20,11 @@ from evolva.loops.planner import is_natural_language_loop
 from evolva.maintenance.optimizer import run_daily_optimization
 from evolva.tui import run_fullscreen_tui, run_tui
 from evolva.workflow.engine import WorkflowEngine
+
+
+def config_from_args(args: argparse.Namespace) -> AgentConfig:
+    root = getattr(args, "root", None)
+    return AgentConfig(root=Path(root).expanduser().resolve()) if root else AgentConfig()
 
 
 HELP = """
@@ -406,7 +412,7 @@ def handle_command(agent: EvolvaAgent, line: str) -> bool:
 
 
 def chat(args: argparse.Namespace) -> int:
-    agent = EvolvaAgent(AgentConfig(), assume_yes=args.yes)
+    agent = EvolvaAgent(config_from_args(args), assume_yes=args.yes)
     print("Evolva CLI. Type /help for commands, /exit to quit.")
     if not agent.llm.available:
         print("[提示] 未检测到 OPENAI_API_KEY，将使用有限规则模式。")
@@ -430,7 +436,7 @@ def chat(args: argparse.Namespace) -> int:
 
 
 def once(args: argparse.Namespace) -> int:
-    agent = EvolvaAgent(AgentConfig(), assume_yes=args.yes)
+    agent = EvolvaAgent(config_from_args(args), assume_yes=args.yes)
     result = agent.chat(args.message, image_sources=args.image or None)
     if args.show_tools and result.tool_logs:
         print_block("tool logs", "\n\n".join(result.tool_logs))
@@ -440,11 +446,11 @@ def once(args: argparse.Namespace) -> int:
 
 def tui(args: argparse.Namespace) -> int:
     runner = run_fullscreen_tui if getattr(args, "fullscreen", False) else run_tui
-    return runner(assume_yes=args.yes, show_tools=not args.no_tools)
+    return runner(assume_yes=args.yes, show_tools=not args.no_tools, config=config_from_args(args))
 
 
 def trace_cmd(args: argparse.Namespace) -> int:
-    agent = EvolvaAgent(AgentConfig(), assume_yes=True)
+    agent = EvolvaAgent(config_from_args(args), assume_yes=True)
     if args.trace_cmd == "list":
         rows = agent.tracer.list_runs(limit=args.limit)
         print("\n".join(f"{r['run_id']}\t{r['status']}\t{r['duration_ms']}ms\t{r['user_input']}" for r in rows) or "No traces")
@@ -464,7 +470,7 @@ def trace_cmd(args: argparse.Namespace) -> int:
 
 
 def metrics_cmd(args: argparse.Namespace) -> int:
-    agent = EvolvaAgent(AgentConfig(), assume_yes=True)
+    agent = EvolvaAgent(config_from_args(args), assume_yes=True)
     if args.metrics_cmd == "list":
         print(agent.observability.render_metrics(limit=args.limit))
         return 0
@@ -478,7 +484,7 @@ def metrics_cmd(args: argparse.Namespace) -> int:
 
 
 def sandbox_cmd(args: argparse.Namespace) -> int:
-    agent = EvolvaAgent(AgentConfig(), assume_yes=True)
+    agent = EvolvaAgent(config_from_args(args), assume_yes=True)
     if args.sandbox_cmd == "info":
         print(agent.sandbox.describe())
         return 0
@@ -490,7 +496,7 @@ def sandbox_cmd(args: argparse.Namespace) -> int:
 
 
 def eval_cmd(args: argparse.Namespace) -> int:
-    harness = EvalHarness(AgentConfig(), assume_yes=args.yes)
+    harness = EvalHarness(config_from_args(args), assume_yes=args.yes)
     results = harness.run_file(args.tasks)
     print(render_results(results))
     gate = harness.gate(
@@ -506,7 +512,7 @@ def eval_cmd(args: argparse.Namespace) -> int:
 
 
 def taskset_cmd(args: argparse.Namespace) -> int:
-    config = AgentConfig()
+    config = config_from_args(args)
     if args.taskset_cmd == "health":
         result = taskset_tools.taskset_tool_health(config.mcp_config_file)
         if args.json:
@@ -583,7 +589,7 @@ def taskset_cmd(args: argparse.Namespace) -> int:
 
 
 def workflow_cmd(args: argparse.Namespace) -> int:
-    agent = EvolvaAgent(AgentConfig(), assume_yes=args.yes)
+    agent = EvolvaAgent(config_from_args(args), assume_yes=args.yes)
     result = WorkflowEngine(agent).run_file(args.spec)
     print("\n\n".join(result.logs))
     print(f"Workflow {result.workflow_id}: {'ok' if result.ok else 'failed'}")
@@ -591,7 +597,7 @@ def workflow_cmd(args: argparse.Namespace) -> int:
 
 
 def mcp_cmd(args: argparse.Namespace) -> int:
-    agent = EvolvaAgent(AgentConfig(), assume_yes=args.yes)
+    agent = EvolvaAgent(config_from_args(args), assume_yes=args.yes)
     if args.mcp_cmd == "servers":
         print(agent._call_tool("mcp_servers", {}).output)
         return 0
@@ -650,7 +656,7 @@ def mcp_cmd(args: argparse.Namespace) -> int:
 
 
 def evolve_cmd(args: argparse.Namespace) -> int:
-    agent = EvolvaAgent(AgentConfig(), assume_yes=True)
+    agent = EvolvaAgent(config_from_args(args), assume_yes=True)
     if args.evolve_cmd == "status":
         print(agent.evolution.render_status())
         return 0
@@ -682,7 +688,7 @@ def evolve_cmd(args: argparse.Namespace) -> int:
 
 
 def optimize_cmd(args: argparse.Namespace) -> int:
-    report, path, rendered = run_daily_optimization(AgentConfig().root, apply=args.apply, write=True)
+    report, path, rendered = run_daily_optimization(config_from_args(args).root, apply=args.apply, write=True)
     print(rendered)
     if path:
         print(f"Report: {path}")
@@ -692,7 +698,7 @@ def optimize_cmd(args: argparse.Namespace) -> int:
 
 
 def dream_cmd(args: argparse.Namespace) -> int:
-    agent = EvolvaAgent(AgentConfig(), assume_yes=True)
+    agent = EvolvaAgent(config_from_args(args), assume_yes=True)
     engine = DreamEngine(agent)
     if getattr(args, "dream_cmd", None) == "backlog":
         print(engine.render_backlog(limit=args.limit))
@@ -714,7 +720,7 @@ def dream_cmd(args: argparse.Namespace) -> int:
 
 
 def loop_cmd(args: argparse.Namespace) -> int:
-    agent = EvolvaAgent(AgentConfig(), assume_yes=args.yes)
+    agent = EvolvaAgent(config_from_args(args), assume_yes=args.yes)
     runner = LoopRunner(agent)
     session = LoopDraftSession.for_agent(agent)
     if args.loop_cmd == "list":
@@ -821,6 +827,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting in default TUI mode")
     parser.add_argument("--no-tools", action="store_true", help="Hide the TUI tool log panel at startup")
     parser.add_argument("--fullscreen", action="store_true", help="Use the legacy full-screen curses TUI")
+    parser.add_argument("--root", type=Path, help="Project root for sandbox, runtime state, traces, memory, and repo index; defaults to the current directory or EVOLVA_ROOT")
     sub = parser.add_subparsers(dest="cmd", required=False, metavar="{tui,ask,trace,metrics,sandbox,eval,taskset,evolve,optimize,dream,loop,workflow,mcp}")
     tui_p = sub.add_parser("tui", help="Open the Evolva TUI workbench explicitly")
     tui_p.add_argument("--yes", action="store_true", help="Approve shell/python tools without prompting")
@@ -1061,7 +1068,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if getattr(args, "chat", False) and not getattr(args, "cmd", None):
-        return chat(argparse.Namespace(yes=args.yes, show_tools=False))
+        return chat(argparse.Namespace(yes=args.yes, show_tools=False, root=args.root))
     if not hasattr(args, "func"):
         return tui(argparse.Namespace(yes=args.yes, no_tools=args.no_tools, fullscreen=args.fullscreen))
     return args.func(args)

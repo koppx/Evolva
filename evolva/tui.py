@@ -80,8 +80,8 @@ class TUIConfirmation:
 
 
 class EvolvaTUI:
-    def __init__(self, assume_yes: bool = False, show_tools: bool = True):
-        self.agent = EvolvaAgent(AgentConfig(), assume_yes=assume_yes, confirmer=TUIConfirmation(self))
+    def __init__(self, assume_yes: bool = False, show_tools: bool = True, config: AgentConfig | None = None):
+        self.agent = EvolvaAgent(config or AgentConfig(), assume_yes=assume_yes, confirmer=TUIConfirmation(self))
         self.assume_yes = assume_yes
         self.show_tools = show_tools
         self.messages: list[ChatLine] = []
@@ -1233,9 +1233,9 @@ if TEXTUAL_AVAILABLE:
             "Evaluating the response path...",
         )
 
-        def __init__(self, assume_yes: bool = False, show_tools: bool = True):
+        def __init__(self, assume_yes: bool = False, show_tools: bool = True, config: AgentConfig | None = None):
             super().__init__()
-            self.runtime = EvolvaTUI(assume_yes=assume_yes, show_tools=show_tools)
+            self.runtime = EvolvaTUI(assume_yes=assume_yes, show_tools=show_tools, config=config)
             self.show_tools = show_tools
             self._printed_messages = 0
             self._spinner_tick = 0
@@ -1436,13 +1436,13 @@ else:
             raise RuntimeError("Textual is not installed")
 
 
-def run_tui(assume_yes: bool = False, show_tools: bool = True) -> int:
+def run_tui(assume_yes: bool = False, show_tools: bool = True, config: AgentConfig | None = None) -> int:
     """Run Evolva's default Textual workbench, falling back to inline mode if unavailable."""
 
-    return run_textual_tui(assume_yes=assume_yes, show_tools=show_tools)
+    return run_textual_tui(assume_yes=assume_yes, show_tools=show_tools, config=config)
 
 
-def run_textual_tui(assume_yes: bool = False, show_tools: bool = True) -> int:
+def run_textual_tui(assume_yes: bool = False, show_tools: bool = True, config: AgentConfig | None = None) -> int:
     """Run the Textual-powered Evolva workbench.
 
     Textual gives Evolva a real app layout: persistent chat, tool stream,
@@ -1452,16 +1452,16 @@ def run_textual_tui(assume_yes: bool = False, show_tools: bool = True) -> int:
 
     if not TEXTUAL_AVAILABLE:
         print("Textual is not installed; falling back to the inline TUI. Install with `pip install -e .`.")
-        return EvolvaInlineTUI(assume_yes=assume_yes, show_tools=show_tools).run()
-    app = EvolvaTextualApp(assume_yes=assume_yes, show_tools=show_tools)
+        return EvolvaInlineTUI(assume_yes=assume_yes, show_tools=show_tools, config=config).run()
+    app = EvolvaTextualApp(assume_yes=assume_yes, show_tools=show_tools, config=config)
     app.run()
     return 0
 
 
-def run_fullscreen_tui(assume_yes: bool = False, show_tools: bool = True) -> int:
+def run_fullscreen_tui(assume_yes: bool = False, show_tools: bool = True, config: AgentConfig | None = None) -> int:
     """Run the legacy curses renderer for users that explicitly want a full-screen TUI."""
 
-    return EvolvaTUI(assume_yes=assume_yes, show_tools=show_tools).run()
+    return EvolvaTUI(assume_yes=assume_yes, show_tools=show_tools, config=config).run()
 
 
 class EvolvaInlineTUI:
@@ -1472,8 +1472,8 @@ class EvolvaInlineTUI:
     the curses TUI, but prints compact header/message/input blocks inline.
     """
 
-    def __init__(self, assume_yes: bool = False, show_tools: bool = True):
-        self.app = EvolvaTUI(assume_yes=assume_yes, show_tools=show_tools)
+    def __init__(self, assume_yes: bool = False, show_tools: bool = True, config: AgentConfig | None = None):
+        self.app = EvolvaTUI(assume_yes=assume_yes, show_tools=show_tools, config=config)
         self.show_tools = show_tools
         self._printed_messages = 0
         self._interrupt_armed = False

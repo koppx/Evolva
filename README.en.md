@@ -233,7 +233,7 @@ Memory / Skill governance separates "stored for audit" from "allowed into the pr
 
 Repo Index remembers what was indexed, what was skipped, and what can be reused. Runtime artifacts are ignored so traces and audit files do not constantly invalidate search.
 
-Multi-agent is governed collaboration, not unbounded autonomy. The Task Router first classifies the request: simple questions stay single-agent, research tasks use researcher/reviewer, coding tasks use planner/coder/reviewer, and broad engineering tasks use the full role set. Sub-agents can call tools inside their role scope, but every call still goes through the main agent's Policy, approval, Sandbox, and Trace path. Writes, shell, MCP calls, and recursive delegation are outside the default sub-agent scope.
+Multi-agent is governed collaboration, not unbounded autonomy. The Task Router can classify the request first: simple questions stay single-agent, research tasks use researcher/reviewer, coding tasks use planner/coder/reviewer, and broad engineering tasks use the full role set. Automatic collaboration is off by default and can be enabled with `EVOLVA_MULTI_AGENT_AUTO_ROUTE=1`. Sub-agents only get low-side-effect read, search, and inspection tools by default; writes, shell/Python, MCP calls, and recursive delegation are outside the default scope.
 
 ```json
 {
@@ -294,8 +294,8 @@ Evolva can touch files and run code, so safety is part of the default runtime ra
 
 | Boundary | Purpose |
 | --- | --- |
-| Path sandbox | Keep file access inside the workspace |
-| Writable roots | Narrow where changes may be written |
+| Path sandbox | Keep file access inside the project root |
+| Writable roots | Write only to `.evolva/workspace` by default; extend deliberately |
 | Failure rollback | Restore protected files after failed shell / Python runs |
 | Dangerous command blocklist | Stop high-risk command patterns before execution |
 | Policy audit | Record allow, deny, and confirmation decisions |
